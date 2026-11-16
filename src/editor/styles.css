@@ -1383,6 +1383,23 @@ body.resizing-x *, body.resizing-y * { cursor: inherit !important; }
   min-width: 0;
   accent-color: #8ab4f8;
 }
+.editor-back {
+  position: absolute;
+  top: 12px;
+  left: 16px;
+  z-index: 5;
+  width: 32px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel2);
+  color: var(--text);
+  cursor: pointer;
+}
+.editor-back:hover { border-color: #3a3a3a; }
 .editor-compare-btn {
   position: absolute;
   top: 12px;
@@ -1404,8 +1421,8 @@ body.resizing-x *, body.resizing-y * { cursor: inherit !important; }
 .editor-compare-btn.on { background: #f2f2f2; color: #111; border-color: #f2f2f2; }
 .editor-compare-tag {
   position: absolute;
-  top: 16px;
-  left: 16px;
+  top: 14px;
+  left: 60px;
   background: #000c;
   color: #fff;
   border-radius: 8px;

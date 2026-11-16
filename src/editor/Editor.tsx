@@ -1801,6 +1801,16 @@ export default function Editor({
               }}
             />
           )}
+          <button
+            type="button"
+            className="editor-back"
+            title="Volver (Esc)"
+            aria-label="Volver"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={onCancel}
+          >
+            <GlyphIcon name="back" size={16} />
+          </button>
           {compare && <div className="editor-compare-tag">Original</div>}
           {ready && (
             <button
@@ -1972,9 +1982,6 @@ export default function Editor({
           )}
           {pending && pendingLabel && <p className="hint editor-job">{pendingLabel}</p>}
           <div className="editor-actions">
-              <button type="button" className="btn-ghost editor-ico-btn" title="Volver (Esc)" aria-label="Volver" onClick={onCancel}>
-                <GlyphIcon name="back" size={16} />
-              </button>
               <button type="button" className="btn-ghost" disabled={busy} onClick={resetAll}>
                 Restablecer
               </button>
