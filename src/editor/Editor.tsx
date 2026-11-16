@@ -1972,6 +1972,9 @@ export default function Editor({
           )}
           {pending && pendingLabel && <p className="hint editor-job">{pendingLabel}</p>}
           <div className="editor-actions">
+              <button type="button" className="btn-ghost editor-ico-btn" title="Volver (Esc)" aria-label="Volver" onClick={onCancel}>
+                <GlyphIcon name="back" size={16} />
+              </button>
               <button type="button" className="btn-ghost" disabled={busy} onClick={resetAll}>
                 Restablecer
               </button>
@@ -2001,9 +2004,6 @@ export default function Editor({
                   <GlyphIcon name="clipboard" size={18} />
                 </button>
               </div>
-              <button type="button" className="editor-x" title="Cerrar" aria-label="Cerrar" onClick={onCancel}>
-                ×
-              </button>
             </div>
           <div className="editor-side-main">
             <div className="editor-tools">
@@ -2846,6 +2846,7 @@ export default function Editor({
 type Glyph =
   | "adjust"
   | "crop"
+  | "back"
   | "angle"
   | "thick"
   | "hard"
@@ -2972,6 +2973,7 @@ function GlyphIcon({ name, size = 16 }: { name: Glyph; size?: number }) {
           <path {...s} d="M8 2v2.4M8 11.6V14M2 8h2.4M11.6 8H14" />
         </>
       )}
+      {name === "back" && <path {...s} d="M7 3.2 2.4 8 7 12.8M3 8h10.5" />}
       {name === "crop" && <path {...s} d="M5 2.4v8.2H13.2M2.4 5H11v8.6" />}
       {name === "stick" && <path {...s} d="M8 2.2 9.5 6.2 13.6 6.4 10.5 9 11.6 13.2 8 10.8 4.4 13.2 5.5 9 2.4 6.4 6.5 6.2z" />}
       {name === "text" && <path {...s} d="M3.2 3.2h9.6M8 3.2v9.6M5.6 12.8h4.8" />}
