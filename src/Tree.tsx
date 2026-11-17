@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { COMPUTER, type Entry } from "./api";
 import { folderName } from "./format";
 
@@ -13,15 +14,37 @@ type Props = {
 
 export function Tree(props: Props) {
   const open = props.expanded.has(COMPUTER);
+  const [quickOpen, setQuickOpen] = useState(() => {
+    try {
+      return localStorage.getItem("pv.quick") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const toggleQuick = () =>
+    setQuickOpen((v) => {
+      try {
+        localStorage.setItem("pv.quick", v ? "0" : "1");
+      } catch {
+        /* sin almacenamiento */
+      }
+      return !v;
+    });
   return (
     <div className="tree">
       {props.quick.length > 0 && (
         <>
-          <div className="tree-section">Acceso rápido</div>
-          {props.quick.map((dir) => (
-            <Node key={"q:" + dir.path} {...props} path={dir.path} label={dir.name} depth={0} />
-          ))}
-          <div className="tree-section">Este equipo</div>
+          <div className="node">
+            <button className="twist" aria-label={quickOpen ? "Contraer" : "Expandir"} onClick={toggleQuick}>
+              {quickOpen ? "▾" : "▸"}
+            </button>
+            <button className="node-main" onClick={toggleQuick}>
+              <StarGlyph />
+              <span>Acceso rápido</span>
+            </button>
+          </div>
+          {quickOpen &&
+            props.quick.map((dir) => <Node key={"q:" + dir.path} {...props} path={dir.path} label={dir.name} depth={1} />)}
         </>
       )}
       <div className={props.current === COMPUTER ? "node active" : "node"}>
@@ -67,6 +90,14 @@ function PcGlyph() {
     <svg className="node-ico pc" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
       <rect x="2" y="2.5" width="12" height="8" rx="1" fill="none" stroke="currentColor" strokeWidth="1.3" />
       <path d="M6 13.5h4M8 10.5v3" fill="none" stroke="currentColor" strokeWidth="1.3" />
+    </svg>
+  );
+}
+
+function StarGlyph() {
+  return (
+    <svg className="node-ico pc" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M8 2l1.8 3.7 4 .6-2.9 2.8.7 4L8 11.2 4.4 13.1l.7-4L2.2 6.3l4-.6L8 2Z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
     </svg>
   );
 }

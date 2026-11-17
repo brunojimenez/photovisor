@@ -1,75 +1,88 @@
+mod catalog;
+mod codec;
 mod config;
 mod files;
 mod thumbs;
+mod watch;
 
 use base64::{engine::general_purpose::STANDARD, Engine};
+use catalog::{Catalog, Meta};
 use files::{BatchReport, FileInfo, FolderView};
 use percent_encoding::percent_decode_str;
 use serde::Deserialize;
-use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpStream};
+use tauri::Emitter;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use std::time::Duration;
 use tauri::Manager;
 
-const STUDIO_BACKEND: &str = r"D:\workspace\docs\comfyui\studio\backend";
-static STUDIO_STARTING: AtomicBool = AtomicBool::new(false);
+// ---------- aplicaciones amigas (PhotoVisor <-> Studio) ----------
+// Cada una deja una ficha en %LOCALAPPDATA%\amigas\ al arrancar; la otra la lee para saber si existe.
+// PhotoVisor no habla con ComfyUI ni con el API del estudio: solo abre el Studio con una foto.
 
-fn http_ok(addr: &str, path: &str) -> bool {
-    let Ok(socket) = addr.parse::<SocketAddr>() else {
-        return false;
-    };
-    let mut stream = match TcpStream::connect_timeout(&socket, Duration::from_millis(600)) {
-        Ok(stream) => stream,
-        Err(_) => return false,
-    };
-    let _ = stream.set_read_timeout(Some(Duration::from_millis(800)));
-    let _ = stream.set_write_timeout(Some(Duration::from_millis(800)));
-    let req = format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
-    if stream.write_all(req.as_bytes()).is_err() {
-        return false;
-    }
-    let mut buf = [0u8; 160];
-    let n = stream.read(&mut buf).unwrap_or(0);
-    String::from_utf8_lossy(&buf[..n]).contains(" 200 ")
+fn friends_dir() -> Option<PathBuf> {
+    std::env::var_os("LOCALAPPDATA").map(|dir| PathBuf::from(dir).join("amigas"))
 }
 
-fn start_studio_api() {
-    if STUDIO_STARTING.swap(true, Ordering::SeqCst) {
+fn announce_photovisor(version: &str) {
+    let (Some(dir), Ok(exe)) = (friends_dir(), std::env::current_exe()) else {
         return;
-    }
-    if !Path::new(STUDIO_BACKEND).is_dir() {
-        STUDIO_STARTING.store(false, Ordering::SeqCst);
-        return;
-    }
-    let mut cmd = Command::new("python");
-    cmd.args(["-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", "8790"])
-        .current_dir(STUDIO_BACKEND)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000);
-    }
-    if cmd.spawn().is_err() {
-        STUDIO_STARTING.store(false, Ordering::SeqCst);
+    };
+    let card = serde_json::json!({
+        "name": "PhotoVisor",
+        "exe": exe.to_string_lossy(),
+        "version": version,
+        "dev": cfg!(debug_assertions),
+    });
+    if std::fs::create_dir_all(&dir).is_ok() {
+        let _ = std::fs::write(dir.join("photovisor.json"), serde_json::to_vec_pretty(&card).unwrap_or_default());
     }
 }
 
+/// El .exe del Studio de escritorio, si está instalado.
+fn studio_exe() -> Option<PathBuf> {
+    let text = std::fs::read_to_string(friends_dir()?.join("studio.json")).ok()?;
+    let card: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let exe = PathBuf::from(card.get("exe")?.as_str()?);
+    exe.is_file().then_some(exe)
+}
+
+#[derive(serde::Serialize, Clone)]
+struct LaunchArgs {
+    path: Option<String>,
+    edit: bool,
+}
+
+fn parse_args(argv: &[String]) -> LaunchArgs {
+    LaunchArgs {
+        path: files::path_from_args(argv.iter().skip(1).cloned()),
+        edit: argv.iter().skip(1).any(|arg| arg == "--edit"),
+    }
+}
+
+/// Lo que pidió quien abrió PhotoVisor: un archivo o carpeta y, con `--edit`, entrar directo al editor.
 #[tauri::command]
-fn ai_status() -> serde_json::Value {
-    let comfy = http_ok("127.0.0.1:8188", "/system_stats");
-    let mut studio = http_ok("127.0.0.1:8790", "/api/health");
-    if comfy && !studio {
-        start_studio_api();
-        studio = http_ok("127.0.0.1:8790", "/api/health");
+fn launch_args() -> LaunchArgs {
+    parse_args(&std::env::args().collect::<Vec<_>>())
+}
+
+/// ¿Está el Studio en este PC?
+#[tauri::command]
+fn studio_info() -> serde_json::Value {
+    serde_json::json!({ "installed": studio_exe().is_some() })
+}
+
+/// Abre la foto en el Studio (su propia ventana): él levanta su API y crea la sesión con la foto.
+#[tauri::command]
+fn open_in_studio(path: String) -> Result<(), String> {
+    let exe = studio_exe().ok_or("El Studio no está instalado en este PC.")?;
+    let file = Path::new(&path);
+    if !file.is_file() {
+        return Err("Esa foto ya no existe.".to_string());
     }
-    serde_json::json!({ "comfy": comfy, "studio": studio })
+    let mut cmd = Command::new(exe);
+    cmd.arg(file).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    cmd.spawn().map(|_| ()).map_err(|e| format!("No pude abrir el Studio: {e}"))
 }
 
 struct AppState {
@@ -239,48 +252,95 @@ async fn transform(
 }
 
 #[tauri::command]
-async fn recycle(state: tauri::State<'_, AppState>, paths: Vec<String>) -> Result<BatchReport, String> {
+async fn recycle(
+    state: tauri::State<'_, AppState>,
+    catalog: tauri::State<'_, Catalog>,
+    paths: Vec<String>,
+) -> Result<BatchReport, String> {
     let root = root_of(&state)?;
-    tauri::async_runtime::spawn_blocking(move || files::recycle_many(&root, &paths))
+    let report = tauri::async_runtime::spawn_blocking(move || files::recycle_many(&root, &paths))
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    catalog.remove(&report.done);
+    Ok(report)
 }
 
 #[tauri::command]
 async fn paste(
     state: tauri::State<'_, AppState>,
+    catalog: tauri::State<'_, Catalog>,
     dest: String,
     sources: Vec<String>,
     cut: bool,
 ) -> Result<BatchReport, String> {
     let root = root_of(&state)?;
     let dest = files::ensure_inside(&root, Path::new(&dest))?;
-    tauri::async_runtime::spawn_blocking(move || files::paste_files(&dest, &sources, cut))
+    let (report, moved) = tauri::async_runtime::spawn_blocking(move || files::paste_files(&dest, &sources, cut))
         .await
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    for (from, to) in &moved {
+        if cut {
+            catalog.rename(from, to);
+        } else {
+            catalog.copy(from, to);
+        }
+    }
+    Ok(report)
 }
 
 #[tauri::command]
-fn rename_file(state: tauri::State<AppState>, path: String, name: String) -> Result<String, String> {
+fn rename_file(
+    state: tauri::State<AppState>,
+    catalog: tauri::State<Catalog>,
+    path: String,
+    name: String,
+) -> Result<String, String> {
     let root = root_of(&state)?;
     let dest = files::rename_entry(&root, Path::new(&path), &name)?;
-    Ok(files::nice_path(&dest))
+    let shown = files::nice_path(&dest);
+    catalog.rename(&path, &shown);
+    Ok(shown)
 }
 
 #[tauri::command]
 async fn save_edit(
     state: tauri::State<'_, AppState>,
+    catalog: tauri::State<'_, Catalog>,
     source: String,
     data_b64: String,
     mode: String,
+    format: Option<String>,
 ) -> Result<String, String> {
     let root = root_of(&state)?;
     let bytes = STANDARD
         .decode(data_b64.trim())
         .map_err(|_| "la imagen guardada no se pudo leer".to_string())?;
+    let origin = source.clone();
+    let saved = tauri::async_runtime::spawn_blocking(move || {
+        // el editor entrega un PNG sin pérdida; aquí se codifica en el formato final
+        let bytes = match format.as_deref() {
+            Some("jpeg") => codec::encode_jpeg(&bytes, codec::JPEG_QUALITY)?,
+            Some("png") => codec::optimize_png(&bytes),
+            _ => bytes,
+        };
+        let dest = files::save_image(&root, Path::new(&source), &bytes, &mode)?;
+        Ok::<String, String>(files::nice_path(&dest))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    // la copia editada hereda la valoración y la etiqueta del original
+    if saved != origin {
+        catalog.copy(&origin, &saved);
+    }
+    Ok(saved)
+}
+
+#[tauri::command]
+async fn suggest_tilt(state: tauri::State<'_, AppState>, path: String) -> Result<Option<f32>, String> {
+    let root = root_of(&state)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let dest = files::save_png(&root, Path::new(&source), &bytes, &mode)?;
-        Ok(files::nice_path(&dest))
+        let file = files::ensure_inside(&root, Path::new(&path))?;
+        codec::suggest_tilt(&file, files::is_mirrored(&file))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -289,12 +349,49 @@ async fn save_edit(
 #[tauri::command]
 async fn delete_permanent(
     state: tauri::State<'_, AppState>,
+    catalog: tauri::State<'_, Catalog>,
     paths: Vec<String>,
 ) -> Result<BatchReport, String> {
     let root = root_of(&state)?;
-    tauri::async_runtime::spawn_blocking(move || files::delete_many(&root, &paths))
+    let report = tauri::async_runtime::spawn_blocking(move || files::delete_many(&root, &paths))
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    catalog.remove(&report.done);
+    Ok(report)
+}
+
+/// Valoración y etiqueta de las fotos de una carpeta.
+#[tauri::command]
+fn catalog_folder(catalog: tauri::State<Catalog>, folder: String) -> std::collections::HashMap<String, Meta> {
+    catalog.folder(&folder)
+}
+
+/// Cambia valoración (0-5) y/o etiqueta de varias fotos. `None` no toca ese dato; etiqueta "" la quita.
+#[tauri::command]
+fn catalog_set(
+    catalog: tauri::State<Catalog>,
+    paths: Vec<String>,
+    rating: Option<u8>,
+    label: Option<String>,
+) -> Result<(), String> {
+    catalog.set(&paths, rating, label.as_deref())
+}
+
+/// Avisa a la interfaz (evento `folder-changed`) cuando cambian los archivos de esta carpeta.
+#[tauri::command]
+fn watch_folder(
+    app: tauri::AppHandle,
+    watcher: tauri::State<watch::FolderWatch>,
+    path: String,
+) -> Result<(), String> {
+    let folder = PathBuf::from(&path);
+    if !folder.is_dir() {
+        watcher.stop();
+        return Ok(());
+    }
+    watcher.watch(&folder, move || {
+        let _ = app.emit("folder-changed", &path);
+    })
 }
 
 fn photo_protocol(
@@ -384,9 +481,26 @@ fn parse_range(header: &str, size: u64) -> Option<(u64, u64)> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            // otra copia quiso abrirse (p. ej. «Editar en PhotoVisor» desde el estudio): se reusa esta ventana
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+            let args = parse_args(&argv);
+            let _ = app.emit("open-args", args);
+        }))
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
             root: Mutex::new(None),
+        })
+        .manage(watch::FolderWatch::default())
+        .setup(|app| {
+            let dir = app.path().app_config_dir()?;
+            std::fs::create_dir_all(&dir)?;
+            app.manage(Catalog::open(&dir.join("catalog.db"))?);
+            announce_photovisor(&app.package_info().version.to_string());
+            Ok(())
         })
         .register_uri_scheme_protocol("photo", photo_protocol)
         .invoke_handler(tauri::generate_handler![
@@ -404,10 +518,16 @@ pub fn run() {
             quick_access,
             user_folder,
             launch_folder,
+            launch_args,
+            studio_info,
+            open_in_studio,
             save_edit,
+            suggest_tilt,
+            catalog_folder,
+            catalog_set,
+            watch_folder,
             rename_file,
-            paste,
-            ai_status
+            paste
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

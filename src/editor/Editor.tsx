@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { ADJUST_ZERO, applyAdjust, adjustIdle, type Adjust } from "./editorAdjust";
+import { ADJUST_ZERO, HSL_BANDS, STYLE_KINDS, applyAdjust, adjustIdle, type Adjust, type Band, type HslKey } from "./editorAdjust";
+import { PRESETS, presetAdjust } from "./editorPresets";
 import { WM_COLOR_ICONS, WM_DEFAULT, drawPieces, drawWatermark, installedFonts, watermarkIdle, wmFont, type Piece, type Watermark } from "./editorMark";
 import { applyPaint, cloneCanvas, eraseOverlay, type PaintFx } from "./editorPaint";
 
@@ -7,7 +8,49 @@ type Crop = { x: number; y: number; w: number; h: number };
 type Handle = "body" | "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 type Mark = "pencil" | "brush" | "eraser";
 type Tool = "adjust" | "crop" | "paint" | "stick" | "text" | "fill" | "wm";
-type AiMode = "blur" | "solid" | "replace" | "upscale";
+/** Fichas de estilo: con miniatura si hay (las pasa la app), si no, un botón de texto. */
+function StyleTiles(props: {
+  items: { id: string | number; label: string }[];
+  value: string | number;
+  thumbs?: Record<string, string>;
+  onPick: (id: any) => void;
+}) {
+  return (
+    <div className={props.thumbs ? "style-grid" : "editor-looks"}>
+      {props.items.map((s) => {
+        const src = props.thumbs?.[String(s.id)];
+        const on = props.value === s.id;
+        if (!props.thumbs) {
+          return (
+            <button key={s.id} type="button" className={`editor-look ${on ? "on" : ""}`} onClick={() => props.onPick(s.id)}>
+              {s.label}
+            </button>
+          );
+        }
+        return (
+          <button key={s.id} type="button" className={`style-tile ${on ? "on" : ""}`} onClick={() => props.onPick(s.id)} aria-pressed={on}>
+            <span className="style-thumb">{src ? <img src={src} alt="" draggable={false} /> : <b>✎</b>}</span>
+            <span className="style-name">{s.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+type AiMode = "blur" | "solid" | "replace" | "upscale" | "style";
+
+/** Estilos de la IA (ids que entiende el estudio). "custom" usa el texto que escriba la persona. */
+const STYLE_CHOICES = [
+  { id: "cartoon", label: "Cartoon" },
+  { id: "anime", label: "Anime" },
+  { id: "pixar", label: "3D animado" },
+  { id: "comic", label: "Cómic" },
+  { id: "watercolor", label: "Acuarela" },
+  { id: "oil", label: "Óleo" },
+  { id: "sketch", label: "Boceto" },
+  { id: "custom", label: "Otro…" },
+];
 type View = { scale: number; left: number; top: number };
 export type BgFixOpts = {
   mode: "blur" | "solid";
@@ -19,7 +62,7 @@ export type BgFixOpts = {
   mask?: Blob;
 };
 
-const SLIDERS: { key: keyof Adjust; label: string }[] = [
+const SLIDERS: { key: keyof Adjust; label: string; min?: number; def?: number }[] = [
   { key: "brightness", label: "Brillo" },
   { key: "hdr", label: "Exposición" },
   { key: "contrast", label: "Contraste" },
@@ -36,12 +79,16 @@ const SLIDERS: { key: keyof Adjust; label: string }[] = [
   { key: "blue", label: "Tono azul" },
   { key: "detail", label: "Detalle" },
   { key: "sharp", label: "Nitidez" },
+  { key: "denoise", label: "Ruido", min: 0 },
+  { key: "chroma", label: "Ruido color", min: 0 },
+  { key: "grain", label: "Grano", min: 0 },
+  { key: "grainSize", label: "Tamaño grano", min: 0, def: 40 },
 ];
 
 const GROUPS: { title: string; keys: (keyof Adjust)[] }[] = [
   { title: "Claro", keys: ["brightness", "hdr", "contrast", "highlights", "shadows", "white", "black", "vignette", "marco"] },
   { title: "Color", keys: ["saturate", "warmth", "tint", "skin", "blue"] },
-  { title: "Detalle", keys: ["detail", "sharp"] },
+  { title: "Detalle", keys: ["detail", "sharp", "denoise", "chroma", "grain", "grainSize"] },
 ];
 
 const ZOOM_MIN = 0.05;
@@ -59,6 +106,7 @@ const PAINT_FX: { id: PaintFx; label: string; tip: string }[] = [
   { id: "color", label: "Colorear", tip: "Pinta color sobre la zona. Deshacer saca el trazo." },
   { id: "pixel", label: "Pixelar", tip: "Agrupa píxeles en la zona pintada." },
   { id: "clone", label: "Clonar", tip: "Copia textura desde un origen. Shift+clic fija ese origen." },
+  { id: "heal", label: "Reparar", tip: "Quita manchas, polvo o marcas rellenando con la textura de alrededor." },
 ];
 const PAINT_SWATCHES = [
   { hex: "#1A1A1A", tip: "Negro" },
@@ -259,9 +307,15 @@ export default function Editor({
   src,
   onCancel,
   onSave,
+  onSuggestTilt,
+  outputType,
   onInpaint,
   onBgFix,
   onUpscale,
+  onStylize,
+  styleThumbs,
+  startTool,
+  startAiMode,
   onDetect,
   pending = false,
   pendingLabel = "",
@@ -276,7 +330,12 @@ export default function Editor({
 }: {
   src: string;
   onCancel: () => void;
-  onSave: (blob: Blob, pin: boolean, mode: "copy" | "replace") => Promise<void>;
+  /** `format` dice en qué formato debe quedar el archivo; el blob siempre es un PNG sin pérdida. */
+  onSave: (blob: Blob, pin: boolean, mode: "copy" | "replace", format?: "png" | "jpeg") => Promise<void>;
+  /** Si se da, el panel de giro muestra «Auto»: devuelve los grados para enderezar la foto, o null. */
+  onSuggestTilt?: () => Promise<number | null>;
+  /** Formato al guardar. Por defecto PNG. */
+  outputType?: "image/png" | "image/jpeg";
   onInpaint?: (image: Blob, mask: Blob, prompt: string, pin: boolean, count?: number, engine?: string) => Promise<void>;
   onBgFix?: (image: Blob, opts: BgFixOpts, pin: boolean) => Promise<void>;
   onUpscale?: (
@@ -285,6 +344,12 @@ export default function Editor({
     pin: boolean,
     opts?: { tiled?: boolean; faceFix?: boolean; faceFixDenoise?: number; tiledDenoise?: number },
   ) => Promise<void>;
+  /** Pestaña y modo de IA con los que abre (p. ej. «Borrar o cambiar una zona» desde la sección IA). */
+  startTool?: "adjust" | "fill";
+  /** Miniaturas por estilo (`original` = foto de muestra). Sin esto los estilos se muestran como botones de texto. */
+  styleThumbs?: Record<string, string>;
+  startAiMode?: "blur" | "solid" | "replace" | "upscale" | "style";
+  onStylize?: (image: Blob, style: string, opts: { prompt?: string; guidance?: number; count?: number }, pin: boolean) => Promise<unknown>;
   onDetect?: (image: Blob, opts: { margin: number; detect: number; feather: number }) => Promise<Blob>;
   pending?: boolean;
   pendingLabel?: string;
@@ -337,15 +402,49 @@ export default function Editor({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [compare, setCompare] = useState(false);
-  const [tool, setTool] = useState<Tool>("adjust");
+  const [tool, setTool] = useState<Tool>(startTool ?? "adjust");
   const [paintFx, setPaintFx] = useState<PaintFx>("blur");
   const [paintStrength, setPaintStrength] = useState(50);
   const [paintColor, setPaintColor] = useState("#1A1A1A");
   const [paintTick, setPaintTick] = useState(0);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
-  const [aiMode, setAiMode] = useState<AiMode>("blur");
+  const [aiMode, setAiMode] = useState<AiMode>(startAiMode ?? "blur");
   const [upScale, setUpScale] = useState(2);
+  const [styleId, setStyleId] = useState("cartoon");
+  const [quickThumbs, setQuickThumbs] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const sample = styleThumbs?.original;
+    if (!sample) return;
+    let alive = true;
+    const img = new Image();
+    img.onload = () => {
+      if (!alive) return;
+      const out: Record<string, string> = {};
+      const draw = (adjust: Adjust) => {
+        const cv = document.createElement("canvas");
+        cv.width = 256;
+        cv.height = 256;
+        const cx = cv.getContext("2d");
+        if (!cx) return "";
+        cx.drawImage(img, 0, 0, 256, 256);
+        const px = cx.getImageData(0, 0, 256, 256);
+        applyAdjust(px.data, 256, 256, adjust);
+        cx.putImageData(px, 0, 0);
+        return cv.toDataURL("image/jpeg", 0.85);
+      };
+      out["0"] = sample;
+      for (const s of STYLE_KINDS) out[String(s.id)] = draw({ ...ADJUST_ZERO, style: s.id, styleAmt: 70 });
+      setQuickThumbs(out);
+    };
+    img.src = sample;
+    return () => {
+      alive = false;
+    };
+  }, [styleThumbs?.original]);
+  const [stylePrompt, setStylePrompt] = useState("");
+  const [styleGuidance, setStyleGuidance] = useState(2.5);
+  const [styleCount, setStyleCount] = useState(1);
   const [upTiled, setUpTiled] = useState(() => localStorage.getItem("studio.upTiled") !== "0");
   const [upFaceFix, setUpFaceFix] = useState(() => localStorage.getItem("studio.upFaceFix") !== "0");
   const [upFfDenoise, setUpFfDenoise] = useState(() => {
@@ -383,6 +482,14 @@ export default function Editor({
   const sideDrag = useRef<number | null>(null);
   const [saveOpen, setSaveOpen] = useState(false);
   const [savedKey, setSavedKey] = useState("");
+  const [keysOpen, setKeysOpen] = useState(false);
+  const [autoBusy, setAutoBusy] = useState(false);
+  const [hslBand, setHslBand] = useState<Band>("r");
+  const [presetId, setPresetId] = useState("");
+  const [presetAmt, setPresetAmt] = useState(100);
+  const [wbPick, setWbPick] = useState(false);
+  const wbPickRef = useRef(false);
+  const adjBeforeLook = useRef<Adjust | null>(null);
   const [maskTick, setMaskTick] = useState(0);
   const [cursor, setCursor] = useState<{ x: number; y: number; on: boolean }>({ x: 0, y: 0, on: false });
   const maskRef = useRef<HTMLCanvasElement | null>(null);
@@ -430,6 +537,7 @@ export default function Editor({
   const logBox = useRef<HTMLPreElement | null>(null);
   adjRef.current = adj;
   compareRef.current = compare;
+  wbPickRef.current = wbPick;
   toolRef.current = tool;
   aiModeRef.current = aiMode;
   markRef.current = mark;
@@ -799,6 +907,85 @@ export default function Editor({
     setPieceUndoN(0);
   }
 
+  async function autoStraighten() {
+    if (!onSuggestTilt) return;
+    setAutoBusy(true);
+    setErr("");
+    try {
+      const found = await onSuggestTilt();
+      if (found === null) setErr("No encontré rectas claras para enderezar. Prueba con el deslizador.");
+      else setTilt(Math.max(-45, Math.min(45, flipH !== flipV ? -found : found)));
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setAutoBusy(false);
+    }
+  }
+
+  function setAdjKey(key: keyof Adjust, n: number) {
+    setPresetId("");
+    setAdj((a) => ({ ...a, [key]: n }));
+  }
+
+  function chooseLook(id: string) {
+    if (!id) {
+      setAdj(adjBeforeLook.current ?? ADJUST_ZERO);
+      adjBeforeLook.current = null;
+      setPresetId("");
+      return;
+    }
+    const preset = PRESETS.find((p) => p.id === id);
+    if (!preset) return;
+    if (!presetId) adjBeforeLook.current = adj;
+    setPresetId(id);
+    setAdj(presetAdjust(preset, presetAmt));
+  }
+
+  function setLookAmount(n: number) {
+    setPresetAmt(n);
+    const preset = PRESETS.find((p) => p.id === presetId);
+    if (preset) setAdj(presetAdjust(preset, n));
+  }
+
+  /** Balance de blancos: lo que hay bajo el cursor debe quedar neutro. Se calcula Calidez y Tono por mínimos cuadrados. */
+  function pickWhiteBalance(x: number, y: number) {
+    const img = imgRef.current;
+    if (!img) return;
+    const { w: W, h: H } = work();
+    const px = Math.round(x);
+    const py = Math.round(y);
+    if (px < 0 || py < 0 || px >= W || py >= H) return;
+    const src = raster(img, rot, flipH, flipV, W, H, null, tilt);
+    const ctx = src?.getContext("2d");
+    if (!src || !ctx) return;
+    const x0 = Math.max(0, px - 4);
+    const y0 = Math.max(0, py - 4);
+    const x1 = Math.min(W - 1, px + 4);
+    const y1 = Math.min(H - 1, py + 4);
+    const data = ctx.getImageData(x0, y0, x1 - x0 + 1, y1 - y0 + 1).data;
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    const count = data.length / 4;
+    for (let i = 0; i < data.length; i += 4) {
+      r += data[i];
+      g += data[i + 1];
+      b += data[i + 2];
+    }
+    r /= count;
+    g /= count;
+    b /= count;
+    const m = (r + g + b) / 3;
+    const dr = m - r;
+    const dg = m - g;
+    const db = m - b;
+    const warmth = Math.max(-100, Math.min(100, Math.round(((dr - db) / 72) * 100)));
+    const tint = Math.max(-100, Math.min(100, Math.round(((-12 * dr + 28 * dg - 12 * db) / 1072) * 100)));
+    setPresetId("");
+    setAdj((a) => ({ ...a, warmth, tint }));
+    setWbPick(false);
+  }
+
   function pickStickIcon(ch: string) {
     setStickIcon(ch);
     if (!pieceFresh.current && pieces.some((p) => p.id === pieceId && p.kind === "icon")) {
@@ -986,7 +1173,7 @@ export default function Editor({
       }
     }
     const mask = aiModeRef.current === "replace" ? maskRef.current : personMaskRef.current;
-    if (toolRef.current === "fill" && aiModeRef.current !== "upscale" && mask && !compareRef.current) {
+    if (toolRef.current === "fill" && aiModeRef.current !== "upscale" && aiModeRef.current !== "style" && mask && !compareRef.current) {
       const ov = document.createElement("canvas");
       ov.width = dw;
       ov.height = dh;
@@ -1278,6 +1465,9 @@ export default function Editor({
   function resetAll() {
     const img = imgRef.current;
     setAdj(ADJUST_ZERO);
+    setPresetId("");
+    adjBeforeLook.current = null;
+    setWbPick(false);
     setRot(0);
     setTilt(0);
     setCropRatio(-1);
@@ -1375,6 +1565,11 @@ export default function Editor({
       panDrag.current = { x0: e.clientX, y0: e.clientY, left0: v.left, top0: v.top };
       return;
     }
+    if (wbPickRef.current && toolRef.current === "adjust") {
+      const p = toImage(e.clientX, e.clientY, e.currentTarget);
+      pickWhiteBalance(p.x, p.y);
+      return;
+    }
     if (toolRef.current === "paint") {
       const p = toImage(e.clientX, e.clientY, e.currentTarget);
       if (paintFxRef.current === "clone" && (e.shiftKey || clonePickRef.current)) {
@@ -1401,7 +1596,7 @@ export default function Editor({
       setCursor({ x: e.clientX - rect.left, y: e.clientY - rect.top, on: true });
       return;
     }
-    if (toolRef.current === "fill" && aiModeRef.current !== "upscale") {
+    if (toolRef.current === "fill" && aiModeRef.current !== "upscale" && aiModeRef.current !== "style") {
       e.currentTarget.setPointerCapture(e.pointerId);
       lastPaint.current = null;
       const p = toImage(e.clientX, e.clientY, e.currentTarget);
@@ -1455,7 +1650,7 @@ export default function Editor({
 
   function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
-    if (toolRef.current === "paint" || (toolRef.current === "fill" && aiModeRef.current !== "upscale")) {
+    if (toolRef.current === "paint" || (toolRef.current === "fill" && aiModeRef.current !== "upscale" && aiModeRef.current !== "style")) {
       setCursor({ x: e.clientX - rect.left, y: e.clientY - rect.top, on: true });
     }
     const panning = panDrag.current;
@@ -1486,7 +1681,7 @@ export default function Editor({
       setPieces((list) => list.map((item) => (item.id === movingPiece.id ? { ...item, x: nx, y: ny } : item)));
       return;
     }
-    if (toolRef.current === "fill" && aiModeRef.current !== "upscale" && (e.buttons & 1)) {
+    if (toolRef.current === "fill" && aiModeRef.current !== "upscale" && aiModeRef.current !== "style" && (e.buttons & 1)) {
       const p = toImage(e.clientX, e.clientY, e.currentTarget);
       stamp(p.x, p.y);
       return;
@@ -1672,11 +1867,20 @@ export default function Editor({
     im.src = url;
   }
 
-  async function exportBlob(scale = outScale) {
+  async function exportBlob(scale = outScale, type: "image/png" | "image/jpeg" = "image/png") {
     const img = imgRef.current;
     if (!img) throw new Error("no hay foto");
     const { w: W, h: H } = work();
-    const c = clampCrop(crop, W, H);
+    // recorte a píxeles enteros: a 1× es una copia exacta, sin suavizado por posiciones con decimales
+    const raw = clampCrop(crop, W, H);
+    const cx = Math.min(W - 1, Math.max(0, Math.round(raw.x)));
+    const cy = Math.min(H - 1, Math.max(0, Math.round(raw.y)));
+    const c = {
+      x: cx,
+      y: cy,
+      w: Math.min(W - cx, Math.max(1, Math.round(raw.w))),
+      h: Math.min(H - cy, Math.max(1, Math.round(raw.h))),
+    };
     await new Promise((r) => requestAnimationFrame(r));
     const full = raster(img, rot, flipH, flipV, W, H, adj, tilt);
     if (!full) throw new Error("no pude procesar");
@@ -1695,8 +1899,24 @@ export default function Editor({
     blitMark(ctx, dw, dh, c);
     blitPieces(ctx, dw, dh, c);
     return new Promise<Blob>((resolve, reject) => {
-      out.toBlob((b) => (b ? resolve(b) : reject(new Error("no pude exportar"))), "image/png");
+      out.toBlob((b) => (b ? resolve(b) : reject(new Error("no pude exportar"))), type, type === "image/jpeg" ? 0.97 : undefined);
     });
+  }
+
+  async function applyStyle() {
+    if (!onStylize) return;
+    if (styleId === "custom" && !stylePrompt.trim()) {
+      setErr("Escribe el estilo que quieres.");
+      return;
+    }
+    setBusy(true);
+    setErr("");
+    try {
+      await onStylize(await exportBlob(1), styleId, { prompt: stylePrompt, guidance: styleGuidance, count: styleCount }, pin);
+    } catch (e) {
+      setErr(String(e));
+      setBusy(false);
+    }
   }
 
   async function applyUpscale() {
@@ -1723,7 +1943,7 @@ export default function Editor({
     setErr("");
     const keyAtSave = stateKey;
     try {
-      await onSave(await exportBlob(), pin, mode);
+      await onSave(await exportBlob(outScale, "image/png"), pin, mode, outputType === "image/jpeg" ? "jpeg" : "png");
       setSavedKey(keyAtSave);
       setBusy(false);
     } catch (e) {
@@ -1768,9 +1988,12 @@ export default function Editor({
       )}
       <div className="editor-body">
         <div
-          className={`editor-stage ${compare ? "comparing" : ""} ${tool === "paint" || (tool === "fill" && aiMode !== "upscale") ? "fill" : ""}`}
+          className={`editor-stage ${compare ? "comparing" : ""} ${wbPick && tool === "adjust" ? "eyedrop" : ""} ${tool === "paint" || (tool === "fill" && aiMode !== "upscale" && aiMode !== "style") ? "fill" : ""}`}
           ref={stageRef}
-          onPointerDown={onPointerDown}
+          onPointerDown={(e) => {
+            setKeysOpen(false);
+            onPointerDown(e);
+          }}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
@@ -1790,7 +2013,7 @@ export default function Editor({
               </div>
             </>
           )}
-          {(tool === "paint" || (tool === "fill" && aiMode !== "upscale")) && cursor.on && !compare && (
+          {(tool === "paint" || (tool === "fill" && aiMode !== "upscale" && aiMode !== "style")) && cursor.on && !compare && (
             <i
               className={`editor-cursor ${mark}`}
               style={{
@@ -1813,6 +2036,7 @@ export default function Editor({
           </button>
           {compare && <div className="editor-compare-tag">Original</div>}
           {ready && (
+            <div className="editor-stage-tools" onPointerDown={(e) => e.stopPropagation()}>
             <button
               type="button"
               className={`editor-compare-btn ${compare ? "on" : ""}`}
@@ -1832,6 +2056,27 @@ export default function Editor({
               <GlyphIcon name="eye" size={16} />
               <span>Original</span>
             </button>
+              <button
+                type="button"
+                className={`editor-compare-btn editor-keys-btn ${keysOpen ? "on" : ""}`}
+                title="Atajos de teclado"
+                aria-label="Atajos de teclado"
+                onClick={() => setKeysOpen((v) => !v)}
+              >
+                ?
+              </button>
+              {keysOpen && (
+                <dl className="editor-keys">
+                  <dt>Espacio (mantener)</dt><dd>ver el original</dd>
+                  <dt>Rueda · + · −</dt><dd>zoom</dd>
+                  <dt>0</dt><dd>ajustar a la ventana</dd>
+                  <dt>Ctrl+Z · Ctrl+Y</dt><dd>deshacer · rehacer</dd>
+                  <dt>[ · ]</dt><dd>grosor del pincel</dd>
+                  <dt>B · P · E</dt><dd>pincel · lápiz · goma (máscara de IA)</dd>
+                  <dt>Esc</dt><dd>volver</dd>
+                </dl>
+              )}
+            </div>
           )}
           {pending && (
             <div className="editor-console" onPointerDown={(e) => e.stopPropagation()}>
@@ -2012,6 +2257,22 @@ export default function Editor({
                 </button>
               </div>
             </div>
+          <div
+            className="editor-scale-row"
+            title={`Escala del PNG al guardar. No usa IA.${local ? " La marca entra en el archivo." : " Para agrandar de verdad, IA → Ampliar."}`}
+          >
+            <span>
+              Al guardar {Math.round(c.w)}×{Math.round(c.h)}
+              {outScale !== 1 ? ` → ${Math.round(c.w * outScale)}×${Math.round(c.h * outScale)}` : ""}
+            </span>
+            <div className="editor-seg" role="group" aria-label="Escala al guardar">
+              {[1, 1.5, 2].map((s) => (
+                <button key={s} type="button" className={outScale === s ? "on" : ""} onClick={() => setOutScale(s)}>
+                  {s}×
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="editor-side-main">
             <div className="editor-tools">
               <button type="button" className={`btn-ghost ${tool === "adjust" ? "on" : ""}`} title="Ajustar" onClick={() => setTool("adjust")}>
@@ -2070,9 +2331,41 @@ export default function Editor({
             </div>
             {tool === "adjust" ? (
               <>
+                <Card title="Looks">
+                  <div className="editor-looks">
+                    <button
+                      type="button"
+                      className={`editor-look ${presetId === "" ? "on" : ""}`}
+                      title="Quitar el look y volver a tus ajustes"
+                      onClick={() => chooseLook("")}
+                    >
+                      Ninguno
+                    </button>
+                    {PRESETS.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className={`editor-look ${presetId === p.id ? "on" : ""}`}
+                        title={`${p.label}: reemplaza tus ajustes (Ninguno los recupera)`}
+                        onClick={() => chooseLook(p.id)}
+                      >
+                        <i style={{ background: `linear-gradient(135deg, ${p.swatch[0]}, ${p.swatch[1]})` }} />
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                  {presetId && <SliderRow icon="power" label="Intensidad" value={presetAmt} min={0} max={100} def={100} onChange={setLookAmount} />}
+                </Card>
                 {GROUPS.map((g) => (
-                  <section key={g.title} className="editor-group">
-                    <h3 className="editor-sec">{g.title}</h3>
+                  <Card key={g.title} title={g.title} action={g.title === "Color" ? (<button
+                          type="button"
+                          className={`editor-eyedrop ${wbPick ? "on" : ""}`}
+                          title="Balance de blancos: pulsa y haz clic en algo que deba ser gris o blanco"
+                          onClick={() => setWbPick((v) => !v)}
+                        >
+                          <GlyphIcon name="eyedrop" size={14} />
+                          {wbPick ? "Haz clic en la foto" : "Cuentagotas"}
+                        </button>) : undefined}>
                     {g.keys.map((key) => {
                       const s = SLIDERS.find((x) => x.key === key);
                       if (!s) return null;
@@ -2081,43 +2374,81 @@ export default function Editor({
                           key={s.key}
                           icon={s.key}
                           label={s.label}
+                          min={s.min}
+                          def={s.def}
                           value={adj[s.key]}
-                          onChange={(n) => setAdj((a) => ({ ...a, [s.key]: n }))}
+                          onChange={(n) => setAdjKey(s.key, n)}
                         />
                       );
                     })}
-                  </section>
+                  </Card>
                 ))}
+                <Card title="Color por tono">
+                    <div className="editor-hsl-dots" role="group" aria-label="Tono a ajustar">
+                      {HSL_BANDS.map((band) => {
+                        const touched = (["h", "s", "l"] as const).some((k) => adj[`${k}_${band.id}` as HslKey] !== 0);
+                        return (
+                          <button
+                            key={band.id}
+                            type="button"
+                            className={`editor-hsl-dot ${hslBand === band.id ? "on" : ""} ${touched ? "touched" : ""}`}
+                            style={{ background: band.color }}
+                            title={band.label}
+                            aria-label={band.label}
+                            onClick={() => setHslBand(band.id)}
+                          />
+                        );
+                      })}
+                    </div>
+                    <SliderRow icon="tint" label="Tono" value={adj[`h_${hslBand}` as HslKey]} min={-100} max={100} def={0} hint="Desplaza el color hacia el vecino" onChange={(n) => setAdjKey(`h_${hslBand}` as HslKey, n)} />
+                    <SliderRow icon="saturate" label="Saturación" value={adj[`s_${hslBand}` as HslKey]} min={-100} max={100} def={0} onChange={(n) => setAdjKey(`s_${hslBand}` as HslKey, n)} />
+                    <SliderRow icon="brightness" label="Luminosidad" value={adj[`l_${hslBand}` as HslKey]} min={-100} max={100} def={0} onChange={(n) => setAdjKey(`l_${hslBand}` as HslKey, n)} />
+                </Card>
+                <Card title="Blanco y negro">
+                    <SliderRow icon="opacity" label="Cantidad" value={adj.bw} min={0} max={100} def={0} onChange={(n) => setAdjKey("bw", n)} />
+                    <SliderRow icon="contrast" label="Filtro" value={adj.bwFilter} min={-100} max={100} def={0} hint="Como un filtro de cámara: a la izquierda oscurece los rojos, a la derecha los aclara" onChange={(n) => setAdjKey("bwFilter", n)} />
+                    <SliderRow icon="tint" label="Virado" value={adj.bwTone} min={0} max={100} def={0} hint="Tiñe los grises (sepia, cianotipo…)" onChange={(n) => setAdjKey("bwTone", n)} />
+                    <div className="editor-swatches">
+                      {[
+                        { label: "Sepia", hue: 35, color: "#b9814a" },
+                        { label: "Selenio", hue: 285, color: "#8a6fb0" },
+                        { label: "Cianotipo", hue: 205, color: "#3f7fb5" },
+                        { label: "Bosque", hue: 120, color: "#6a9a5a" },
+                      ].map((tone) => (
+                        <button
+                          key={tone.label}
+                          type="button"
+                          className={`editor-swatch ${adj.bwTone > 0 && adj.bwHue === tone.hue ? "on" : ""}`}
+                          style={{ background: tone.color }}
+                          title={`Virado ${tone.label.toLowerCase()}`}
+                          onClick={() => {
+                            setPresetId("");
+                            setAdj((a) => ({ ...a, bwHue: tone.hue, bwTone: a.bwTone || 45 }));
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <SliderRow icon="tint" label="Matiz" value={adj.bwHue} min={0} max={360} def={35} onChange={(n) => setAdj((a) => ({ ...a, bwHue: n, bwTone: a.bwTone || 45 }))} />
+                </Card>
+                <Card title="Estilo rápido">
+                  <StyleTiles
+                    items={[{ id: 0, label: "Ninguno" }, ...STYLE_KINDS.map((s) => ({ id: s.id as number, label: s.label }))]}
+                    value={adj.style}
+                    thumbs={Object.keys(quickThumbs).length ? quickThumbs : undefined}
+                    onPick={(id) => setAdjKey("style", id)}
+                  />
+                  {adj.style > 0 && (
+                    <SliderRow icon="opacity" label="Intensidad" value={adj.styleAmt} min={0} max={100} def={70} onChange={(n) => setAdjKey("styleAmt", n)} />
+                  )}
+                  <p className="hint">Filtros al instante, sin IA. {local ? "Para un cartoon completo, abre la foto en el Studio." : "Para un cartoon completo usa IA → Estilo."}</p>
+                </Card>
                 <p className="hint">
                   Viñeta y marco: izquierda blanco, centro nada, derecha negro. Rueda: zoom.
                 </p>
-                <section className="editor-group">
-                  <h3 className="editor-sec">Al guardar</h3>
-                  <p className="hint">
-                    {Math.round(c.w)}×{Math.round(c.h)}
-                    {outScale !== 1 ? ` → ${Math.round(c.w * outScale)}×${Math.round(c.h * outScale)}` : " (original)"}
-                  </p>
-                  <div className="editor-scales">
-                    {[1, 1.5, 2].map((s) => (
-                      <button
-                        key={s}
-                        type="button"
-                        className={outScale === s ? "on" : ""}
-                        onClick={() => setOutScale(s)}
-                      >
-                        {s}×
-                      </button>
-                    ))}
-                  </div>
-                  <p className="hint">
-                    Escala del PNG al guardar. No usa IA.
-                    {local ? " La marca entra en el archivo." : " Para agrandar de verdad, IA → Ampliar."}
-                  </p>
-                </section>
               </>
             ) : tool === "crop" ? (
               <>
-                <h3 className="editor-sec">Recorte</h3>
+                <Card title="Recorte">
                 <div className="editor-places">
                   {(
                     [
@@ -2153,8 +2484,9 @@ export default function Editor({
                   </button>
                 </div>
                 <p className="hint">Arrastrá los bordes del recuadro. Con una proporción elegida, se mantiene al tirar; «Libre» la suelta.</p>
-                <h3 className="editor-sec">Giro</h3>
-                  <div className="editor-rotate-grid" style={{ marginBottom: 10 }}>
+                </Card>
+                <Card title="Giro">
+                <div className="editor-rotate-grid" style={{ marginBottom: 10 }}>
                     <button type="button" className="btn-ghost" title="Girar 90° a la izquierda" onClick={() => turn(-90)}>
                       <GlyphIcon name="rotl" size={22} />
                     </button>
@@ -2169,14 +2501,22 @@ export default function Editor({
                     </button>
                   </div>
                 <OptRow label="Ángulo" value={tilt} min={-45} max={45} def={0} onChange={setTilt} />
-                <button type="button" className="btn-ghost" style={{ marginTop: 8 }} onClick={() => setTilt(0)}>
-                  Centrar
-                </button>
+                <div className="editor-undo" style={{ marginTop: 10 }}>
+                  {onSuggestTilt && (
+                    <button type="button" className="btn-ghost" disabled={autoBusy || !ready} title="Detecta el horizonte o las verticales y endereza la foto" onClick={() => void autoStraighten()}>
+                      {autoBusy ? "Buscando…" : "Auto"}
+                    </button>
+                  )}
+                  <button type="button" className="btn-ghost" onClick={() => setTilt(0)}>
+                    Centrar
+                  </button>
+                </div>
                 <p className="hint">Gira de 90° en 90°, voltea o ajusta el horizonte con el ángulo. Los bordes se recortan un poco para no dejar huecos.</p>
+                </Card>
               </>
             ) : tool === "paint" ? (
               <>
-                <h3 className="editor-sec">Pincel</h3>
+                <Card title="Efecto">
                 <div className="editor-bgmodes editor-fx">
                   {PAINT_FX.map((fx) => (
                     <button
@@ -2186,30 +2526,11 @@ export default function Editor({
                       title={fx.tip}
                       onClick={() => setPaintFx(fx.id)}
                     >
-                      <span className="editor-bgico"><GlyphIcon name={fx.id === "color" ? "color" : fx.id === "pixel" ? "pixel" : fx.id === "clone" ? "clone" : "blur"} size={18} /></span>
+                      <span className="editor-bgico"><GlyphIcon name={fx.id === "color" ? "color" : fx.id === "pixel" ? "pixel" : fx.id === "clone" ? "clone" : fx.id === "heal" ? "heal" : "blur"} size={18} /></span>
                       {fx.label}
                     </button>
                   ))}
                 </div>
-                {paintFx !== "clone" && (
-                <div className="editor-marks">
-                  {MARKS.filter((m) => m.id !== "pencil").map((m) => {
-                    const on = m.id === "eraser" ? mark === "eraser" : mark !== "eraser";
-                    return (
-                      <button
-                        key={m.id}
-                        type="button"
-                        className={`editor-mark ${on ? "on" : ""}`}
-                        title={m.id === "eraser" ? "Saca el trazo. No toca el original." : "Pinta el efecto. El borde se regula con Dureza."}
-                        onClick={() => setMark(m.id === "eraser" ? "eraser" : mark === "eraser" ? "pencil" : mark)}
-                      >
-                        <GlyphIcon name={m.id} size={18} />
-                        <span>{m.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                )}
                 {paintFx === "clone" && (
                   <>
                     <button
@@ -2227,10 +2548,35 @@ export default function Editor({
                     </p>
                   </>
                 )}
-                <OptRow label="Grosor" value={brush} min={4} max={220} onChange={setBrush} />
+                </Card>
+                <div className="editor-card">
+                  <p className="editor-card-title">Trazo</p>
+                  {paintFx !== "clone" && (
+                    <div className="editor-seg" role="group" aria-label="Acción del pincel">
+                      <button
+                        type="button"
+                        className={mark !== "eraser" ? "on" : ""}
+                        title="Pinta el efecto. El borde se regula con Dureza."
+                        onClick={() => setMark(mark === "eraser" ? "pencil" : mark)}
+                      >
+                        <GlyphIcon name="brush" size={14} />
+                        Pintar
+                      </button>
+                      <button type="button" className={mark === "eraser" ? "on" : ""} title="Saca el trazo. No toca el original." onClick={() => setMark("eraser")}>
+                        <GlyphIcon name="eraser" size={14} />
+                        Borrar
+                      </button>
+                    </div>
+                  )}
+                  <OptRow label="Grosor" value={brush} min={4} max={220} def={36} onChange={setBrush} />
+                  {paintFx !== "clone" && paintFx !== "heal" && (
+                    <OptRow label="Intensidad" value={paintStrength} min={10} max={100} def={50} onChange={setPaintStrength} />
+                  )}
+                </div>
                 {paintFx !== "clone" && (
-                  <>
-                    <div className="editor-scales">
+                  <div className="editor-card">
+                    <p className="editor-card-title">Borde</p>
+                    <div className="editor-seg" role="group" aria-label="Tipo de borde">
                       {([["Duro", 100], ["Suave", 50], ["Difuso", 15]] as const).map(([label, v]) => (
                         <button key={label} type="button" className={hardness === v ? "on" : ""} title={`Bordes ${label.toLowerCase()}`} onClick={() => setHardness(v)}>
                           {label}
@@ -2238,16 +2584,10 @@ export default function Editor({
                       ))}
                     </div>
                     <OptRow label="Dureza" value={hardness} min={0} max={100} def={50} onChange={setHardness} />
-                    <OptRow label="Intensidad" value={paintStrength} min={10} max={100} def={50} onChange={setPaintStrength} />
-                  </>
+                  </div>
                 )}
                 {paintFx === "color" && mark !== "eraser" && (
-                  <>
-                    <label className="slider-lab" style={{ marginTop: 12 }}>
-                      <span>Color</span>
-                      <b>{paintColor}</b>
-                    </label>
-                    <div className="editor-swatches">
+                  <Card title="Color" action={<b className="editor-hex">{paintColor}</b>}><div className="editor-swatches">
                       {PAINT_SWATCHES.map((s) => (
                         <button
                           key={s.hex}
@@ -2265,8 +2605,7 @@ export default function Editor({
                         title="Color libre"
                         onChange={(e) => setPaintColor(e.target.value)}
                       />
-                    </div>
-                  </>
+                    </div></Card>
                 )}
                 <div className="editor-undo">
                   <button type="button" className="btn-ghost" disabled={!canUndo || busy} onClick={undoPaint}>
@@ -2282,9 +2621,9 @@ export default function Editor({
               </>
             ) : tool === "stick" ? (
               <>
-                <h3 className="editor-sec">Íconos</h3>
-                <IconPalette label="Color" items={WM_COLOR_ICONS} isOn={(ch) => stickIcon === ch} onPick={pickStickIcon} prefix="Usar" />
-                <IconPalette label="Trazo" items={WM_TRACE} isOn={(ch) => stickIcon === ch} onPick={pickStickIcon} prefix="Usar" />
+                <IconPalette label="Íconos color" items={WM_COLOR_ICONS} isOn={(ch) => stickIcon === ch} onPick={pickStickIcon} prefix="Usar" />
+                <IconPalette label="Íconos trazo" items={WM_TRACE} isOn={(ch) => stickIcon === ch} onPick={pickStickIcon} prefix="Usar" />
+                <Card title="Tamaño">
                 <OptRow
                   label="Tamaño"
                   value={pieces.find((p) => p.id === pieceId)?.size ?? pieceSize}
@@ -2298,28 +2637,30 @@ export default function Editor({
                     }
                   }}
                 />
-                <button
-                  type="button"
-                  className="btn-ghost"
-                  style={{ marginTop: 8 }}
-                  disabled={!pieces.some((p) => p.id === pieceId)}
-                  onClick={() => {
-                    snapPieces("");
-                    setPieces((list) => list.filter((p) => p.id !== pieceId));
-                    setPieceId(0);
-                  }}
-                >
-                  Quitar
-                </button>
-                <button type="button" className="btn-ghost" style={{ marginTop: 8, marginLeft: 6 }} disabled={pieceUndoN === 0} title="Deshacer (Ctrl+Z)" onClick={undoPieces}>
-                  Deshacer
-                </button>
+                </Card>
+                <div className="editor-undo">
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    disabled={!pieces.some((p) => p.id === pieceId)}
+                    onClick={() => {
+                      snapPieces("");
+                      setPieces((list) => list.filter((p) => p.id !== pieceId));
+                      setPieceId(0);
+                    }}
+                  >
+                    Quitar
+                  </button>
+                  <button type="button" className="btn-ghost" disabled={pieceUndoN === 0} title="Deshacer (Ctrl+Z)" onClick={undoPieces}>
+                    Deshacer
+                  </button>
+                </div>
                 <p className="hint">Clic en la foto lo deja ahí. Arrastrá para moverlo. Otro clic agrega otro.</p>
               </>
             ) : tool === "text" ? (
               <>
-                <h3 className="editor-sec">Texto</h3>
-                <input
+                <Card title="Texto">
+<input
                   className="editor-wm-text"
                   value={noteText}
                   maxLength={80}
@@ -2333,11 +2674,10 @@ export default function Editor({
                     }
                   }}
                 />
-                <label className="slider-lab" style={{ marginTop: 8 }}>
-                  <span>Fuente</span>
-                </label>
                 <select
                   className="editor-font"
+                  title="Fuente"
+                  aria-label="Fuente"
                   value={noteFont}
                   onChange={(e) => {
                     const font = e.target.value;
@@ -2352,10 +2692,9 @@ export default function Editor({
                     <option key={font} value={font} style={{ fontFamily: `"${font}"` }}>{font}</option>
                   ))}
                 </select>
-                <label className="slider-lab" style={{ marginTop: 8 }}>
-                  <span>Color</span>
-                </label>
-                <div className="editor-swatches">
+</Card>
+<Card title="Color">
+<div className="editor-swatches">
                   {["#ffffff", "#111111", "#f2e6c8", "#e6c07b", "#d45b5b", "#8eb4e8"].map((hex) => (
                     <button
                       key={hex}
@@ -2372,6 +2711,8 @@ export default function Editor({
                     />
                   ))}
                 </div>
+</Card>
+                <Card title="Tamaño">
                 <OptRow
                   label="Tamaño"
                   value={pieces.find((p) => p.id === pieceId)?.size ?? pieceSize}
@@ -2385,28 +2726,30 @@ export default function Editor({
                     }
                   }}
                 />
-                <button
-                  type="button"
-                  className="btn-ghost"
-                  style={{ marginTop: 8 }}
-                  disabled={!pieces.some((p) => p.id === pieceId && p.kind === "text")}
-                  onClick={() => {
-                    snapPieces("");
-                    setPieces((list) => list.filter((p) => p.id !== pieceId));
-                    setPieceId(0);
-                  }}
-                >
-                  Quitar
-                </button>
-                <button type="button" className="btn-ghost" style={{ marginTop: 8, marginLeft: 6 }} disabled={pieceUndoN === 0} title="Deshacer (Ctrl+Z)" onClick={undoPieces}>
-                  Deshacer
-                </button>
+                </Card>
+                <div className="editor-undo">
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    disabled={!pieces.some((p) => p.id === pieceId && p.kind === "text")}
+                    onClick={() => {
+                      snapPieces("");
+                      setPieces((list) => list.filter((p) => p.id !== pieceId));
+                      setPieceId(0);
+                    }}
+                  >
+                    Quitar
+                  </button>
+                  <button type="button" className="btn-ghost" disabled={pieceUndoN === 0} title="Deshacer (Ctrl+Z)" onClick={undoPieces}>
+                    Deshacer
+                  </button>
+                </div>
                 <p className="hint">Escribí y hacé clic en la foto. No se repite: es un texto suelto, no la marca.</p>
               </>
             ) : tool === "wm" ? (
               <>
-                <h3 className="editor-sec">Marca de agua</h3>
-                <label className="editor-pin">
+                <Card title="Marca de agua">
+<label className="editor-pin">
                   <input
                     type="checkbox"
                     checked={wm.on}
@@ -2414,7 +2757,7 @@ export default function Editor({
                   />
                   ver en la foto y al guardar
                 </label>
-                <div className="editor-scales">
+                <div className="editor-seg">
                   <button
                     type="button"
                     className={wm.mode === "text" ? "on" : ""}
@@ -2448,18 +2791,38 @@ export default function Editor({
                     <option key={font} value={font} style={{ fontFamily: `"${font}"` }}>{font}</option>
                   ))}
                 </select>
-                    <IconPalette label="Color" items={WM_COLOR_ICONS} onPick={(ch) => setWm((w) => ({ ...w, on: true, mode: "text", text: (w.text + ch).slice(0, 80) }))} prefix="Agregar" />
-                    <IconPalette label="Trazo" items={WM_TRACE} onPick={(ch) => setWm((w) => ({ ...w, on: true, mode: "text", text: (w.text + ch).slice(0, 80) }))} prefix="Agregar" />
+                                      </>
+                ) : (
+                  <>
+                    <button type="button" className="btn-ghost editor-wm-file" onClick={() => wmFileRef.current?.click()}>
+                      {wmFileName || "Elegir PNG o imagen"}
+                    </button>
+                    <input
+                      ref={wmFileRef}
+                      type="file"
+                      accept="image/png,image/webp,image/jpeg,image/gif"
+                      hidden
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        if (file) pickWmImage(file);
+                      }}
+                    />
+                    <p className="hint">PNG con transparencia. El lugar de abajo vale igual para la imagen.</p>
+                  </>
+                )}
+                </Card>
+                {wm.mode === "text" && (
+                  <>
+<IconPalette label="Íconos color" items={WM_COLOR_ICONS} onPick={(ch) => setWm((w) => ({ ...w, on: true, mode: "text", text: (w.text + ch).slice(0, 80) }))} prefix="Agregar" />
+                    <IconPalette label="Íconos trazo" items={WM_TRACE} onPick={(ch) => setWm((w) => ({ ...w, on: true, mode: "text", text: (w.text + ch).slice(0, 80) }))} prefix="Agregar" />
                     <p className="hint">
                       {wm.place === "tile"
                         ? "Color conserva su tono. Trazo sigue el color de abajo. Se repite en diagonal."
                         : "Color conserva su tono. Trazo sigue el color de abajo. Un solo sello."}
                     </p>
-                    <label className="slider-lab" style={{ marginTop: 8 }}>
-                      <span>Color</span>
-                      <b>{wm.color}</b>
-                    </label>
-                    <div className="editor-swatches">
+                                        <Card title="Color" action={<b className="editor-hex">{wm.color}</b>}>
+                      <div className="editor-swatches">
                       {[
                         { hex: "#ffffff", tip: "Blanco" },
                         { hex: "#111111", tip: "Negro" },
@@ -2485,27 +2848,11 @@ export default function Editor({
                         onChange={(e) => setWm((w) => ({ ...w, color: e.target.value }))}
                       />
                     </div>
-                  </>
-                ) : (
-                  <>
-                    <button type="button" className="btn-ghost editor-wm-file" onClick={() => wmFileRef.current?.click()}>
-                      {wmFileName || "Elegir PNG o imagen"}
-                    </button>
-                    <input
-                      ref={wmFileRef}
-                      type="file"
-                      accept="image/png,image/webp,image/jpeg,image/gif"
-                      hidden
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        e.target.value = "";
-                        if (file) pickWmImage(file);
-                      }}
-                    />
-                    <p className="hint">PNG con transparencia. El lugar de abajo vale igual para la imagen.</p>
+                    </Card>
                   </>
                 )}
-                <div className="editor-places wm-places">
+                <Card title="Posición">
+                <div className="editor-seg">
                   {WM_PLACES.map(([id, label, tip]) => (
                     <button
                       key={id}
@@ -2527,13 +2874,14 @@ export default function Editor({
                 {wm.mode === "text" && (
                   <OptRow label="Sombra" value={wm.shade} min={0} max={100} def={WM_DEFAULT.shade} onChange={(n) => setWm((w) => ({ ...w, shade: n }))} />
                 )}
+                </Card>
                 <p className="hint">
                   No entra al trabajo de IA. Solo al PNG que guardás. Espacio muestra la foto sin marca.
                 </p>
               </>
             ) : (
               <>
-                <h3 className="editor-sec">Editar con IA</h3>
+                <Card title="Editar con IA">
                 <div className="editor-motor">
                   <b>
                     {aiMode === "replace"
@@ -2542,7 +2890,9 @@ export default function Editor({
                         ? "Sin sampler · YOLO + desenfoque"
                         : aiMode === "solid"
                           ? "Sin sampler · YOLO + color"
-                          : upscaleMotor(upTiled, upFaceFix)}
+                          : aiMode === "style"
+                            ? "Flux Kontext · estilo por instrucción"
+                            : upscaleMotor(upTiled, upFaceFix)}
                   </b>
                     {aiMode === "replace"
                       ? FILL_ENGINES.find((e) => e.id === fillEngine)?.note ||
@@ -2553,9 +2903,11 @@ export default function Editor({
                         : upFaceFix
                           ? "FaceFix en la cara y UltraSharp para agrandar. Más rápido que Tiled."
                           : "Solo 4×-UltraSharp + lanczos. Rápido, menos detalle."
-                      : "No redibuja a la persona. Detectá, retocá la máscara y aplicá."}
+                      : aiMode === "style"
+                        ? "Redibuja la foto completa en otro estilo. Tarda unos minutos y sale a ~1 megapíxel."
+                        : "No redibuja a la persona. Detectá, retocá la máscara y aplicá."}
                 </div>
-                <div className="editor-bgmodes">
+                <div className="editor-bgmodes editor-fx">
                   <button type="button" className={aiMode === "blur" ? "on" : ""} onClick={() => setAiMode("blur")}>
                     <span className="editor-bgico"><GlyphIcon name="blur" size={18} /></span>
                     Desenfocar
@@ -2572,7 +2924,12 @@ export default function Editor({
                     <span className="editor-bgico"><GlyphIcon name="upscale" size={18} /></span>
                     Ampliar
                   </button>
+                  <button type="button" className={aiMode === "style" ? "on" : ""} onClick={() => setAiMode("style")}>
+                    <span className="editor-bgico"><GlyphIcon name="style" size={18} /></span>
+                    Estilo
+                  </button>
                 </div>
+                </Card>
                 {(aiMode === "blur" || aiMode === "solid") && (
                   <>
                     <button
@@ -2583,20 +2940,18 @@ export default function Editor({
                     >
                       {busy && pending ? "Esperando…" : busy ? "Detectando…" : "Detectar persona"}
                     </button>
-                    <p className="slider-lab" style={{ marginTop: 12 }}>
-                      <span>Máscara (verde = se queda)</span>
-                    </p>
-                    <div className="editor-marks">
+                    <Card title="Pincel de máscara (verde = se queda)">
+                    <div className="editor-seg">
                       {MARKS.map((m) => (
                         <button
                           key={m.id}
                           type="button"
-                          className={`editor-mark ${mark === m.id ? "on" : ""}`}
+                          className={mark === m.id ? "on" : ""}
                           title={m.id === "eraser" ? "Restar de la persona (pasa a fondo)" : "Sumar a la persona"}
                           onClick={() => setMark(m.id)}
                         >
-                          <GlyphIcon name={m.id} size={18} />
-                          <span>{m.id === "eraser" ? "Restar" : m.id === "brush" ? "Sumar suave" : "Sumar"}</span>
+                          <GlyphIcon name={m.id} size={14} />
+                          {m.id === "eraser" ? "Restar" : m.id === "brush" ? "Suave" : "Sumar"}
                         </button>
                       ))}
                     </div>
@@ -2606,12 +2961,13 @@ export default function Editor({
                         Limpiar máscara
                       </button>
                     </div>
-                    <OptRow label="Margen" value={bgMargin} min={-40} max={60} onChange={setBgMargin} />
-                    <p className="hint">Izquierda recorta el recorte; derecha guarda más pelo y hombros.</p>
-                    <OptRow label="Pluma" value={bgFeather} min={0} max={50} onChange={setBgFeather} />
-                    <p className="hint">Borde duro o suave entre persona y fondo.</p>
-                    <OptRow label="Detección" value={bgDetect} min={15} max={70} onChange={setBgDetect} />
-                    <p className="hint">Más alto = solo el cuerpo claro. Más bajo = incluye pelo y manos.</p>
+</Card>
+                    <div className="editor-card">
+                      <p className="editor-card-title">Máscara</p>
+                      <OptRow label="Margen" value={bgMargin} min={-40} max={60} hint="Izquierda recorta el recorte; derecha guarda más pelo y hombros." onChange={setBgMargin} />
+                      <OptRow label="Pluma" value={bgFeather} min={0} max={50} hint="Borde duro o suave entre persona y fondo." onChange={setBgFeather} />
+                      <OptRow label="Detección" value={bgDetect} min={15} max={70} hint="Más alto = solo el cuerpo claro. Más bajo = incluye pelo y manos." onChange={setBgDetect} />
+                    </div>
                     <p className="hint">
                       Detectar pinta a la persona en verde. Lápiz suma, goma resta. Si no detectás, YOLO corre al aplicar.
                     </p>
@@ -2635,11 +2991,7 @@ export default function Editor({
                 )}
                 {aiMode === "solid" && (
                   <>
-                    <label className="slider-lab" style={{ marginTop: 12 }}>
-                      <span>Color de fondo</span>
-                      <b>{bgColor}</b>
-                    </label>
-                    <div className="editor-swatches">
+                    <Card title="Color de fondo" action={<b className="editor-hex">{bgColor}</b>}><div className="editor-swatches">
                       {BG_SWATCHES.map((s) => (
                         <button
                           key={s.hex}
@@ -2657,7 +3009,7 @@ export default function Editor({
                         title="Color libre"
                         onChange={(e) => setBgColor(e.target.value)}
                       />
-                    </div>
+                    </div></Card>
                     <p className="hint">Detecta a la persona y deja un fondo liso. Sin inventar escena.</p>
                     <button
                       type="button"
@@ -2671,10 +3023,7 @@ export default function Editor({
                 )}
                 {aiMode === "replace" && (
                   <>
-                    <p className="slider-lab">
-                      <span>Motor del parche</span>
-                    </p>
-                    <div className="editor-engines">
+                    <Card title="Motor del parche"><div className="editor-engines">
                       {FILL_ENGINES.map((e) => (
                         <button
                           key={e.id}
@@ -2686,26 +3035,24 @@ export default function Editor({
                           {e.label}
                         </button>
                       ))}
-                    </div>
+                    </div></Card>
                     <p className="hint">
                       {fillEngine === "local"
                         ? "Pintá solo la lámpara o el borde. El trazo se tapa con el color del telón."
                         : "Pintá el sector. Eso se recorta como una foto nueva, se genera con el prompt y se pega. El resto no entra al modelo."}
                     </p>
-                    <p className="slider-lab">
-                      <span>Pincel (solo lo pintado)</span>
-                    </p>
-                    <div className="editor-marks">
+                    <Card title="Pincel (solo lo pintado)">
+                    <div className="editor-seg">
                       {MARKS.map((m) => (
                         <button
                           key={m.id}
                           type="button"
-                          className={`editor-mark ${mark === m.id ? "on" : ""}`}
+                          className={mark === m.id ? "on" : ""}
                           title={m.tip}
                           onClick={() => setMark(m.id)}
                         >
-                          <GlyphIcon name={m.id} size={18} />
-                          <span>{m.label}</span>
+                          <GlyphIcon name={m.id} size={14} />
+                          {m.label}
                         </button>
                       ))}
                     </div>
@@ -2715,28 +3062,22 @@ export default function Editor({
                         Limpiar marca
                       </button>
                     </div>
+</Card>
                     {fillEngine !== "local" && (
                       <>
-                        <label className="slider-lab" style={{ marginTop: 12 }}>
-                          <span>Qué poner en la zona</span>
-                        </label>
-                        <textarea
+                        <Card title="Qué poner en la zona"><textarea
                           className="editor-fill-prompt"
                           rows={4}
                           value={fillPrompt}
                           onChange={(e) => setFillPrompt(e.target.value)}
-                        />
-                        <label className="slider-lab" style={{ marginTop: 12 }}>
-                          <span>Variantes</span>
-                          <b>×{variants}</b>
-                        </label>
-                        <div className="editor-scales">
+                        /></Card>
+                        <Card title="Variantes" action={<b className="editor-hex">×{variants}</b>}><div className="editor-scales">
                           {[1, 2, 3].map((n) => (
                             <button key={n} type="button" className={variants === n ? "on" : ""} onClick={() => setVariants(n)}>
                               {n}
                             </button>
                           ))}
-                        </div>
+                        </div></Card>
                       </>
                     )}
                     <button
@@ -2749,6 +3090,57 @@ export default function Editor({
                     </button>
                   </>
                 )}
+                {aiMode === "style" && (
+                  <>
+                    <Card title="Estilo">
+                      <StyleTiles items={STYLE_CHOICES} value={styleId} thumbs={styleThumbs} onPick={setStyleId} />
+                      {styleId === "custom" && (
+                        <input
+                          className="editor-wm-text"
+                          value={stylePrompt}
+                          maxLength={120}
+                          placeholder="Ej.: grabado japonés ukiyo-e"
+                          onChange={(e) => setStylePrompt(e.target.value)}
+                        />
+                      )}
+                    </Card>
+                    <Card title="Ajustes">
+                      <SliderRow
+                        icon="power"
+                        label="Fuerza"
+                        value={styleGuidance}
+                        min={1.5}
+                        max={4.5}
+                        step={0.1}
+                        def={2.5}
+                        fmt={(n) => n.toFixed(1)}
+                        hint="Más alto sigue más el estilo pedido; más bajo conserva más la foto"
+                        onChange={setStyleGuidance}
+                      />
+                    </Card>
+                    <Card title="Variantes" action={<b className="editor-hex">×{styleCount}</b>}>
+                      <div className="editor-seg" role="group" aria-label="Variantes">
+                        {[1, 2].map((n) => (
+                          <button key={n} type="button" className={styleCount === n ? "on" : ""} onClick={() => setStyleCount(n)}>
+                            {n}
+                          </button>
+                        ))}
+                      </div>
+                    </Card>
+                    <p className="hint">
+                      Usa Flux Kontext en ComfyUI. La foto sale a ~1 megapíxel (después puedes ampliarla en «Ampliar») y las caras
+                      pueden cambiar un poco. Para un resultado inmediato usa «Estilo rápido» en Ajustar.
+                    </p>
+                    <button
+                      type="button"
+                      className="btn-send editor-fill-go"
+                      disabled={!ready || busy || !onStylize || Boolean(choices?.length)}
+                      onClick={() => void applyStyle()}
+                    >
+                      {busy ? "Generando…" : "Aplicar estilo"}
+                    </button>
+                  </>
+                )}
                 {aiMode === "upscale" && (
                   <>
                     <p className="hint">
@@ -2756,11 +3148,7 @@ export default function Editor({
                         ? `${Math.round(c.w)}×${Math.round(c.h)} → ${Math.round(c.w * upScale)}×${Math.round(c.h * upScale)}`
                         : ""}
                     </p>
-                    <label className="slider-lab" style={{ marginTop: 8 }}>
-                      <span>Factor</span>
-                      <b>×{upScale}</b>
-                    </label>
-                    <div className="editor-scales">
+                    <Card title="Factor" action={<b className="editor-hex">×{upScale}</b>}><div className="editor-scales">
                       {[1, 1.5, 2, 3, 4].map((s) => (
                         <button
                           key={s}
@@ -2771,7 +3159,7 @@ export default function Editor({
                           {s}×
                         </button>
                       ))}
-                    </div>
+                    </div></Card>
                     <p className="hint">
                       {upScale === 1
                         ? "×1 no agranda: solo FaceFix (o no hace nada si FaceFix está apagado)."
@@ -2779,10 +3167,7 @@ export default function Editor({
                           ? "×3/×4: más teselas, más tiempo. En 12 GB Tiled suele entrar; UltraSharp a ×4 puede ir justo."
                           : "×2 es el equilibrio en esta PC (832×1216 → 1664×2432). ×1.5 si querés menos espera."}
                     </p>
-                    <p className="slider-lab" style={{ marginTop: 12 }}>
-                      <span>Opciones</span>
-                    </p>
-                    <div className="editor-engines">
+                    <Card title="Opciones"><div className="editor-engines">
                       <button
                         type="button"
                         className={upTiled ? "on" : ""}
@@ -2799,7 +3184,7 @@ export default function Editor({
                       >
                         FaceFix
                       </button>
-                    </div>
+                    </div></Card>
                     <p className="hint">
                       {upTiled && upFaceFix
                         ? "Los dos: cara retocada y teselas. 2–5 min."
@@ -2853,6 +3238,9 @@ export default function Editor({
 type Glyph =
   | "adjust"
   | "crop"
+  | "style"
+  | "eyedrop"
+  | "heal"
   | "back"
   | "angle"
   | "thick"
@@ -2981,6 +3369,58 @@ function GlyphIcon({ name, size = 16 }: { name: Glyph; size?: number }) {
         </>
       )}
       {name === "back" && <path {...s} d="M7 3.2 2.4 8 7 12.8M3 8h10.5" />}
+      {name === "eyedrop" && <path {...s} d="M12.4 3.6l-1.9 1.9M9.5 4.5l2.2 2.2M3 13l.6-2.6 5.7-5.7 2 2-5.7 5.7z" />}
+      {name === "heal" && (
+        <>
+          <path {...s} d="M5.2 11.8 11.8 5.2a2.1 2.1 0 0 0-3-3L2.2 8.8a2.1 2.1 0 0 0 3 3Z" />
+          <path {...s} strokeWidth={1.8} d="M7.1 7.1h.01M8.9 5.3h.01M5.3 8.9h.01" />
+        </>
+      )}
+      {name === "grain" && (
+        <>
+          <circle cx="3.6" cy="4.2" r="0.8" fill="currentColor" />
+          <circle cx="7" cy="3" r="0.6" fill="currentColor" />
+          <circle cx="11.2" cy="4.6" r="0.8" fill="currentColor" />
+          <circle cx="13" cy="8.2" r="0.6" fill="currentColor" />
+          <circle cx="9" cy="7.2" r="0.9" fill="currentColor" />
+          <circle cx="4.8" cy="8.6" r="0.7" fill="currentColor" />
+          <circle cx="7.6" cy="11.6" r="0.8" fill="currentColor" />
+          <circle cx="11.6" cy="12.2" r="0.6" fill="currentColor" />
+          <circle cx="3.4" cy="12.6" r="0.6" fill="currentColor" />
+        </>
+      )}
+      {name === "grainSize" && (
+        <>
+          <circle cx="4.6" cy="5" r="1.7" fill="currentColor" />
+          <circle cx="11" cy="4.2" r="1.3" fill="currentColor" />
+          <circle cx="8" cy="9.4" r="1.9" fill="currentColor" />
+          <circle cx="12.6" cy="11.6" r="1.2" fill="currentColor" />
+          <circle cx="3.8" cy="12" r="1.2" fill="currentColor" />
+        </>
+      )}
+      {name === "denoise" && (
+        <>
+          <circle cx="4" cy="5" r="1" fill="currentColor" />
+          <circle cx="8.5" cy="3.8" r="1" fill="currentColor" />
+          <circle cx="12" cy="6.5" r="1" fill="currentColor" />
+          <circle cx="5.5" cy="9.5" r="1" fill="currentColor" />
+          <circle cx="10" cy="10.5" r="1" fill="currentColor" />
+          <circle cx="7" cy="13" r="1" fill="currentColor" />
+          <circle cx="12.5" cy="12.5" r="1" fill="currentColor" />
+        </>
+      )}
+      {name === "chroma" && (
+        <>
+          <circle {...s} cx="8" cy="8" r="5.5" />
+          <path {...s} d="M8 2.5v11M8 8h5.2M8 5.2h3.6" />
+        </>
+      )}
+      {name === "style" && (
+        <>
+          <path {...s} d="M7.4 12.4c0 1.4-1.2 2-3.2 1.6.8-.9.6-1.7.8-2.6.3-1 1.3-1.5 2.3-1 .7.4.1 1.2.1 2z" />
+          <path {...s} d="M7.4 9.8 13 4.2a1.3 1.3 0 0 0-1.8-1.8L5.6 8" />
+        </>
+      )}
       {name === "crop" && <path {...s} d="M5 2.4v8.2H13.2M2.4 5H11v8.6" />}
       {name === "stick" && <path {...s} d="M8 2.2 9.5 6.2 13.6 6.4 10.5 9 11.6 13.2 8 10.8 4.4 13.2 5.5 9 2.4 6.4 6.5 6.2z" />}
       {name === "text" && <path {...s} d="M3.2 3.2h9.6M8 3.2v9.6M5.6 12.8h4.8" />}
@@ -3128,13 +3568,14 @@ function IconPalette({
 }) {
   const [more, setMore] = useState(false);
   return (
-    <>
-      <div className="editor-icons-head">
-        <span>{label}</span>
+    <Card
+      title={label}
+      action={
         <button type="button" className="editor-more" title={more ? "Mostrar una sola fila" : "Mostrar todos"} onClick={() => setMore((v) => !v)}>
           {more ? "menos ▴" : "más ▾"}
         </button>
-      </div>
+      }
+    >
       <div className={`editor-wm-icons ${more ? "more" : "fold"}`}>
         {items.map((icon) => (
           <button
@@ -3148,7 +3589,7 @@ function IconPalette({
           </button>
         ))}
       </div>
-    </>
+    </Card>
   );
 }
 
@@ -3166,6 +3607,19 @@ const OPT_ICONS: Record<string, Glyph> = {
   "Detección": "detect",
 };
 
+/** Todo grupo de controles va en una tarjeta con su título; es la única forma de agrupar en el panel. */
+function Card({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section className="editor-card">
+      <div className="editor-card-head">
+        <p className="editor-card-title">{title}</p>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
 function SliderRow({
   icon,
   label,
@@ -3175,6 +3629,7 @@ function SliderRow({
   step = 1,
   def,
   fmt,
+  hint,
   onChange,
 }: {
   icon: Glyph;
@@ -3185,16 +3640,17 @@ function SliderRow({
   step?: number;
   def?: number;
   fmt?: (n: number) => string;
+  hint?: string;
   onChange: (n: number) => void;
 }) {
   const dirty = def !== undefined && value !== def;
   const nudge = (d: number) => onChange(Math.max(min, Math.min(max, Math.round((value + d) * 1000) / 1000)));
   return (
-    <div className="adj-row">
-      <span className="adj-ico" title={label}>
+    <div className="adj-row" title={hint}>
+      <span className="adj-ico" title={hint ?? label}>
         <GlyphIcon name={icon} size={13} />
       </span>
-      <span className="adj-lab" title={label}>{label}</span>
+      <span className="adj-lab" title={hint ?? label}>{label}</span>
       <button type="button" className="adj-nudge" disabled={value <= min} title={`${label} −`} onClick={() => nudge(-step)}>
         −
       </button>
@@ -3215,6 +3671,7 @@ function OptRow({
   min,
   max,
   def,
+  hint,
   onChange,
 }: {
   label: string;
@@ -3222,21 +3679,26 @@ function OptRow({
   min: number;
   max: number;
   def?: number;
+  hint?: string;
   onChange: (n: number) => void;
 }) {
-  return <SliderRow icon={OPT_ICONS[label] ?? "size"} label={label} value={value} min={min} max={max} def={def} onChange={onChange} />;
+  return <SliderRow icon={OPT_ICONS[label] ?? "size"} label={label} value={value} min={min} max={max} def={def} hint={hint} onChange={onChange} />;
 }
 
 function AdjRow({
   icon,
   label,
   value,
+  min = -100,
+  def = 0,
   onChange,
 }: {
   icon: keyof Adjust;
   label: string;
   value: number;
+  min?: number;
+  def?: number;
   onChange: (n: number) => void;
 }) {
-  return <SliderRow icon={icon} label={label} value={value} min={-100} max={100} def={0} onChange={onChange} />;
+  return <SliderRow icon={icon} label={label} value={value} min={min} max={100} def={def} onChange={onChange} />;
 }

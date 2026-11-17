@@ -1,24 +1,16 @@
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import Editor from "./editor/Editor";
 import {
-  assetUrl,
-  bgFix,
-  cancelAi,
-  createAiSession,
-  detectPerson,
-  inpaint,
-  outputsOfJob,
-  upscale,
-  watchJob,
-} from "./studioAi";
-import {
   deletePermanent,
   fileInfo,
   COMPUTER,
   goUp as goUpApi,
-  launchFolder,
+  launchArgs,
+  studioInfo,
+  openInStudio as openInStudioApi,
   listDir,
   listDrives,
   quickAccess,
@@ -29,12 +21,15 @@ import {
   renameFile,
   saveConfig,
   saveEdit,
+  suggestTilt,
+  catalogFolder,
+  catalogSet,
+  watchFolder,
+  type Meta,
   thumbnail,
   transform,
   userFolder,
   mediaUrl,
-  aiStatus,
-  type AiStatus,
   type BatchReport,
   type Config,
   type Entry,
@@ -51,6 +46,8 @@ import {
   type SortDir,
   type SortKey,
 } from "./format";
+import { STYLE_THUMBS } from "./editor/styleThumbs";
+import { Badge, LABELS, RatingBar } from "./Rating";
 import { Tree } from "./Tree";
 import { Viewer } from "./Viewer";
 
@@ -95,23 +92,39 @@ export default function App() {
   const [quick, setQuick] = useState<Entry[]>([]);
   const [foldersOpen, setFoldersOpen] = useState(true);
   const [editorDirty, setEditorDirty] = useState(false);
-  const [ai, setAi] = useState<AiStatus>({ comfy: false, studio: false });
-  const [aiJob, setAiJob] = useState<{ id: string; label: string } | null>(null);
-  const [aiLog, setAiLog] = useState<string[]>([]);
-  const [aiChoices, setAiChoices] = useState<{ id: string; url: string }[] | null>(null);
-  const [aiSrc, setAiSrc] = useState<string | null>(null);
-  const aiSid = useRef<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [forgetDiscard, setForgetDiscard] = useState(false);
   const [clip, setClip] = useState<{ paths: string[]; cut: boolean } | null>(null);
   const [playing, setPlaying] = useState(false);
   const [pair, setPair] = useState<[Entry, Entry] | null>(null);
   const [typeMenu, setTypeMenu] = useState(false);
+  const [meta, setMeta] = useState<Record<string, Meta>>({});
+  const [filterRating, setFilterRating] = useState(0);
+  const [filterLabel, setFilterLabel] = useState("");
+  const [filterMenu, setFilterMenu] = useState(false);
+  const currentRef = useRef<string | null>(null);
+  const [editorStart, setEditorStart] = useState<{ tool?: "fill"; mode?: "replace" }>({});
   const trail = useRef<string[]>([]);
   const trailAt = useRef(-1);
   const [trailMark, setTrailMark] = useState({ at: -1, len: 0 });
   const [sideW, setSideW] = useState(292);
   const [previewH, setPreviewH] = useState(300);
+  const [previewOpen, setPreviewOpen] = useState(() => {
+    try {
+      return localStorage.getItem("pv.preview") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const togglePreview = () =>
+    setPreviewOpen((v) => {
+      try {
+        localStorage.setItem("pv.preview", v ? "0" : "1");
+      } catch {
+        /* sin almacenamiento */
+      }
+      return !v;
+    });
   const [previewMode, setPreviewMode] = useState<"fit" | "ratio" | "native">("fit");
   const [renaming, setRenaming] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -287,7 +300,8 @@ export default function App() {
       if (!live) return;
       setDrives(found);
       void quickAccess().then((list) => live && setQuick(list)).catch(() => {});
-      const asked = await launchFolder().catch(() => null);
+      const launch = await launchArgs().catch(() => ({ path: null, edit: false }));
+      const asked = launch.path;
       const home = await userFolder().catch(() => null);
       const start = asked || home;
       if (!start || !live) return;
@@ -301,6 +315,11 @@ export default function App() {
         setFiles(view.entries);
         setFocus(view.focus ?? firstPhoto?.path ?? view.entries[0]?.path ?? null);
         setSelected(view.focus ? [view.focus] : firstPhoto ? [firstPhoto.path] : view.entries[0] ? [view.entries[0].path] : []);
+        // «Editar en PhotoVisor» desde el estudio: entra directo al editor con esa foto
+        if (launch.edit && view.focus && view.entries.some((entry) => entry.path === view.focus && entry.kind === "image")) {
+          setEditorStart({});
+          setEditing(true);
+        }
         const next = { ...loaded, lastFolder: view.path };
         setConfig(next);
         await saveConfig(next);
@@ -328,6 +347,54 @@ export default function App() {
     };
   }, []);
 
+  // el estudio (aplicación amiga): si está en el PC se ofrece «Abrir en el estudio»
+  const [studioHere, setStudioHere] = useState(false);
+  useEffect(() => {
+    const check = () => void studioInfo().then((info) => setStudioHere(info.installed)).catch(() => setStudioHere(false));
+    check();
+    window.addEventListener("focus", check);
+    return () => window.removeEventListener("focus", check);
+  }, []);
+
+  // otra copia de PhotoVisor se abrió con un archivo (p. ej. desde el estudio): se abre aquí
+  const openArgsRef = useRef<(args: { path: string | null; edit: boolean }) => void>(() => {});
+  openArgsRef.current = (args) => {
+    if (!args.path) return;
+    if (editing && editorDirty) {
+      setToast("Guarda o descarta la edición actual para abrir la foto que llegó del estudio.");
+      return;
+    }
+    void openPath(args.path)
+      .then(() => {
+        if (args.edit) {
+          setEditorStart({});
+          setEditing(true);
+        }
+      })
+      .catch((error: unknown) => setToast(String(error)));
+  };
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    void listen<{ path: string | null; edit: boolean }>("open-args", (event) => openArgsRef.current(event.payload)).then((fn) => {
+      off = fn;
+    });
+    return () => off?.();
+  }, []);
+
+  async function openInStudio() {
+    const entry = shown.find((item) => item.path === focus);
+    if (entry?.kind !== "image") {
+      setToast("Elige una foto para abrirla en el estudio.");
+      return;
+    }
+    try {
+      await openInStudioApi(entry.path);
+      setToast("Abriendo el Studio con esta foto…");
+    } catch (error) {
+      setToast(String(error instanceof Error ? error.message : error));
+    }
+  }
+
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     void getCurrentWebview()
@@ -342,11 +409,57 @@ export default function App() {
     return () => unlisten?.();
   }, []);
 
+  currentRef.current = current;
+
+  // valoración y etiqueta de la carpeta abierta
+  useEffect(() => {
+    if (!current || current === COMPUTER) {
+      setMeta({});
+      return;
+    }
+    let live = true;
+    void catalogFolder(current)
+      .then((found) => live && setMeta(found))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [current, files]);
+
+  // si cambian los archivos de la carpeta desde fuera (fotos nuevas, borradas), la lista se actualiza sola
+  useEffect(() => {
+    if (current && current !== COMPUTER) void watchFolder(current).catch(() => {});
+  }, [current]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void listen<string>("folder-changed", (event) => {
+      if (event.payload === currentRef.current) void quietRefresh();
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
+  }, []);
+
+  useEffect(() => {
+    if (!filterMenu) return;
+    const close = (event: globalThis.PointerEvent) => {
+      if (!(event.target as HTMLElement).closest(".filter-anchor")) setFilterMenu(false);
+    };
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [filterMenu]);
+
+  const filtering = filterRating > 0 || filterLabel !== "";
   const shown = useMemo(() => {
     const dirs = sortEntries(files.filter((entry) => entry.kind === "dir"), sortKey, sortDir);
-    const media = sortEntries(files.filter((entry) => entry.kind !== "dir"), sortKey, sortDir);
+    const keep = (entry: Entry) => {
+      const m = meta[entry.path];
+      return (m?.rating ?? 0) >= filterRating && (!filterLabel || m?.label === filterLabel);
+    };
+    const media = sortEntries(files.filter((entry) => entry.kind !== "dir" && keep(entry)), sortKey, sortDir);
     return [...dirs, ...media];
-  }, [files, sortKey, sortDir]);
+  }, [files, sortKey, sortDir, meta, filterRating, filterLabel]);
   const photos = useMemo(() => shown.filter((entry) => entry.kind !== "dir"), [shown]);
   const metrics = VIEW[iconSize];
 
@@ -405,6 +518,43 @@ export default function App() {
     if (viewer && focus) return [focus];
     if (selected.length > 0) return selected;
     return focus ? [focus] : [];
+  }
+
+  /** Actualiza la lista sin tocar la selección ni la foto abierta (cambios hechos fuera del programa). */
+  async function quietRefresh() {
+    const folder = currentRef.current;
+    if (!folder || folder === COMPUTER) return;
+    try {
+      const view = await listDir(folder);
+      if (currentRef.current !== folder) return;
+      rememberDirs(view);
+      setFiles(view.entries);
+      setSelected((prev) => prev.filter((path) => view.entries.some((entry) => entry.path === path)));
+      setFocus((prev) => (prev && view.entries.some((entry) => entry.path === prev) ? prev : null));
+    } catch {
+      // la carpeta puede haber desaparecido: la próxima acción lo avisa
+    }
+  }
+
+  /** Valoración y/o etiqueta de las fotos seleccionadas (o de la abierta en el visor). */
+  async function applyMeta(patch: { rating?: number; label?: string }) {
+    const paths = targets().filter((path) => files.find((entry) => entry.path === path)?.kind !== "dir");
+    if (paths.length === 0 || !current || current === COMPUTER) return;
+    setMeta((prev) => {
+      const next = { ...prev };
+      for (const path of paths) {
+        const old = next[path] ?? { rating: 0, label: "" };
+        const merged = { rating: patch.rating ?? old.rating, label: patch.label ?? old.label };
+        if (!merged.rating && !merged.label) delete next[path];
+        else next[path] = merged;
+      }
+      return next;
+    });
+    try {
+      await catalogSet(paths, patch.rating ?? null, patch.label ?? null);
+    } catch (error) {
+      setToast(String(error));
+    }
   }
 
   async function refresh(folder: string, keep: string[], indexHint: number) {
@@ -640,6 +790,19 @@ export default function App() {
         event.preventDefault();
         void goUp();
       }
+      if (!editing && !ctrl && !event.altKey && !event.shiftKey && /^[0-9]$/.test(event.key)) {
+        const n = Number(event.key);
+        if (n <= 5) {
+          event.preventDefault();
+          void applyMeta({ rating: n });
+        } else {
+          const label = LABELS.find((item) => item.key === event.key);
+          if (label) {
+            event.preventDefault();
+            void applyMeta({ label: meta[focus ?? ""]?.label === label.id ? "" : label.id });
+          }
+        }
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -732,60 +895,6 @@ export default function App() {
     }
   }
 
-  useEffect(() => {
-    let live = true;
-    const tick = async () => {
-      try {
-        const status = await aiStatus();
-        if (live) setAi(status);
-      } catch {
-        if (live) setAi({ comfy: false, studio: false });
-      }
-    };
-    void tick();
-    const timer = window.setInterval(() => void tick(), 4000);
-    return () => {
-      live = false;
-      window.clearInterval(timer);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!aiJob || !aiSid.current) return;
-    const sid = aiSid.current;
-    const jobId = aiJob.id;
-    return watchJob(sid, jobId, setAiLog, (session) => {
-      const job = (session.messages || []).find((message) => message.id === jobId);
-      setAiJob(null);
-      if (job?.job_status === "error") {
-        const line = (job.log_text || "").split("\n").filter(Boolean).pop();
-        setToast(line || "La IA no pudo terminar.");
-        return;
-      }
-      const images = outputsOfJob(session, jobId);
-      if (!images.length) {
-        setToast("La IA no devolvió una imagen.");
-        return;
-      }
-      setAiChoices(images.map((image) => ({ id: image.id, url: `${assetUrl(image.id)}?t=${image.id}` })));
-    });
-  }, [aiJob]);
-
-  async function studioSession() {
-    if (aiSid.current) return aiSid.current;
-    const session = await createAiSession();
-    aiSid.current = session.id;
-    return session.id;
-  }
-
-  async function beginAi(label: string, run: (sid: string) => Promise<{ job_id: string }>) {
-    const sid = await studioSession();
-    setAiLog([]);
-    setAiChoices(null);
-    const started = await run(sid);
-    setAiJob({ id: started.job_id, label });
-  }
-
   function openEditor() {
     const entry = shown.find((item) => item.path === focus);
     if (entry?.kind !== "image") {
@@ -793,10 +902,7 @@ export default function App() {
       return;
     }
     setEditorDirty(false);
-    setAiSrc(null);
-    setAiChoices(null);
-    setAiJob(null);
-    setAiLog([]);
+    setEditorStart({});
     setEditing(true);
   }
 
@@ -805,10 +911,10 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
 
-  async function onEditorSave(blob: Blob, _pin: boolean, mode: "copy" | "replace") {
+  async function onEditorSave(blob: Blob, _pin: boolean, mode: "copy" | "replace", format: "png" | "jpeg" = "png") {
     if (!focus || !current) return;
     const dataB64 = bytesToBase64(new Uint8Array(await blob.arrayBuffer()));
-    await saveEdit(focus, dataB64, mode);
+    await saveEdit(focus, dataB64, mode, format);
     // El editor sigue abierto: solo se actualiza la lista, sin tocar la foto en edición.
     const view = await listDir(current);
     rememberDirs(view);
@@ -1062,8 +1168,11 @@ export default function App() {
             ))}
           </div>
         )}
-        <div className="split-y" title="Arrastrá para cambiar el preview" onPointerDown={dragPreview} />
-        <div className="preview" style={{ height: previewH }}>
+        {previewOpen && <div className="split-y" title="Arrastrá para cambiar el preview" onPointerDown={dragPreview} />}
+        <div className={previewOpen ? "preview" : "preview closed"} style={previewOpen ? { height: previewH } : undefined}>
+          <button type="button" className="tree-section tree-section-btn preview-head" aria-expanded={previewOpen} onClick={togglePreview}>
+            <span>{previewOpen ? "▾" : "▸"}</span> Vista previa
+          </button>
           <div className="preview-tools" role="group" aria-label="Vista del preview">
             <button className={previewMode === "fit" ? "on" : ""} title="Ajustar" aria-label="Ajustar" onClick={() => setPreviewMode("fit")}>
               <FitGlyph />
@@ -1104,6 +1213,9 @@ export default function App() {
             )}
           </div>
           {focused && <PreviewText entry={focused} info={info} />}
+          {focused && focused.kind !== "dir" && (
+            <RatingBar meta={meta[focused.path]} onRate={(rating) => void applyMeta({ rating })} onLabel={(label) => void applyMeta({ label })} />
+          )}
         </div>
       </aside>
       ) : (
@@ -1156,6 +1268,45 @@ export default function App() {
                     )}
                   </div>
                 </div>
+                {studioHere && (
+                  <div className="seg" role="group" aria-label="Studio">
+                    <button className="friend-btn" title="Abrir en el Studio (IA: prompts, motores, quitar fondo, ampliar…)" aria-label="Abrir en el Studio" onClick={() => void openInStudio()}>
+                      <StudioGlyph />
+                    </button>
+                  </div>
+                )}
+                <div className="seg filter-anchor menu-anchor" role="group" aria-label="Filtro">
+                  <button className={filtering || filterMenu ? "on" : ""} title="Filtrar por estrellas o etiqueta" aria-label="Filtrar" onClick={() => setFilterMenu((value) => !value)}>
+                    <FilterGlyph />
+                  </button>
+                  {filterMenu && (
+                    <div className="menu filter-menu" role="menu">
+                      <p className="menu-title">Valoración mínima</p>
+                      {[0, 1, 2, 3, 4, 5].map((n) => (
+                        <button key={n} className={filterRating === n ? "on" : ""} onClick={() => setFilterRating(n)}>
+                          {n === 0 ? "Todas" : `${"★".repeat(n)} o más`}
+                        </button>
+                      ))}
+                      <p className="menu-title">Etiqueta</p>
+                      <div className="menu-labels">
+                        <button className={filterLabel === "" ? "on" : ""} onClick={() => setFilterLabel("")}>Todas</button>
+                        {LABELS.map((item) => (
+                          <button
+                            key={item.id}
+                            className={`dot ${filterLabel === item.id ? "on" : ""}`}
+                            style={{ background: item.color }}
+                            title={item.name}
+                            aria-label={item.name}
+                            onClick={() => setFilterLabel(filterLabel === item.id ? "" : item.id)}
+                          />
+                        ))}
+                      </div>
+                      {filtering && (
+                        <button onClick={() => { setFilterRating(0); setFilterLabel(""); }}>Quitar filtros</button>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <div className="seg" role="group" aria-label="Orden">
                   <button className={sortKey === "name" ? "on" : ""} title={sortKey === "name" && sortDir === "desc" ? "Nombre, descendente" : "Nombre, ascendente"} aria-label="Ordenar por nombre" onClick={() => toggleSort("name")}><NameGlyph /></button>
                   <button className={sortKey === "type" ? "on" : ""} title={sortKey === "type" && sortDir === "desc" ? "Tipo, descendente" : "Tipo, ascendente"} aria-label="Ordenar por tipo" onClick={() => toggleSort("type")}><TypeGlyph /></button>
@@ -1169,7 +1320,7 @@ export default function App() {
             {shown.length === 0 ? (
               <div className="grid-scroll">
                 <div className="empty">
-                  <p>Esta carpeta está vacía.</p>
+                  <p>{filtering ? "Ninguna foto coincide con el filtro." : "Esta carpeta está vacía."}</p>
                 </div>
               </div>
             ) : (
@@ -1182,6 +1333,7 @@ export default function App() {
                   iconSize={iconSize}
                   edge={ICON_EDGE[iconSize]}
                   selected={selected}
+                  meta={meta}
                   thumbSrc={(entry) => srcFor(entry, ICON_EDGE[iconSize])}
                   thumbRev={thumbRev}
                   requestThumb={requestThumb}
@@ -1253,6 +1405,9 @@ export default function App() {
           file={focused}
           files={photos}
           filmstrip={config.filmstrip}
+          meta={meta[focused.path]}
+          onRate={(rating) => void applyMeta({ rating })}
+          onLabel={(label) => void applyMeta({ label })}
           zoom={zoom}
           pan={pan}
           edge={ICON_EDGE[iconSize]}
@@ -1264,6 +1419,7 @@ export default function App() {
           }}
           onToggleFilmstrip={() => void setFilmstrip(!config.filmstrip)}
           onEdit={openEditor}
+          onStudio={studioHere ? () => void openInStudio() : undefined}
           canEdit={focused.kind === "image"}
           playing={playing}
           onTogglePlay={() => setPlaying((value) => !value)}
@@ -1366,31 +1522,17 @@ export default function App() {
       )}
       {editing && focused?.kind === "image" && (
         <Editor
-          src={aiSrc || editBase || mediaUrl(focused.path, focused.modifiedMs)}
-          local={!(ai.comfy && ai.studio)}
+          src={editBase || mediaUrl(focused.path, focused.modifiedMs)}
+          local
           folderSave
-          pending={Boolean(aiJob)}
-          pendingLabel={aiJob?.label || ""}
-          liveLog={aiLog}
-          choices={aiChoices || undefined}
-          onPickChoice={(id) => {
-            const choice = aiChoices?.find((item) => item.id === id);
-            if (choice) setAiSrc(choice.url);
-            setAiChoices(null);
-            setAiLog([]);
-          }}
-          onDismissChoices={() => setAiChoices(null)}
-          onCancelJob={() => {
-            void cancelAi().catch((error) => setToast(String(error)));
-            setAiJob(null);
-          }}
-          onDetect={async (image, opts) => detectPerson(await studioSession(), image, opts)}
-          onBgFix={(image, opts, pin) => beginAi(opts.mode === "solid" ? "IA · quitar fondo" : "IA · desenfocar fondo", (sid) => bgFix(sid, image, opts, pin))}
-          onUpscale={(image, scale, pin, opts) => beginAi("IA · ampliar", (sid) => upscale(sid, image, scale, pin, opts))}
-          onInpaint={(image, mask, prompt, pin, count, engine) => beginAi("IA · rellenar zona", (sid) => inpaint(sid, image, mask, prompt, pin, count, engine))}
+          styleThumbs={STYLE_THUMBS}
           onCancel={requestCloseEditor}
           onDirtyChange={setEditorDirty}
+          outputType={/\.jpe?g$/i.test(focused.path) ? "image/jpeg" : "image/png"}
           onSave={onEditorSave}
+          onSuggestTilt={() => suggestTilt(focused.path)}
+          startTool={editorStart.tool}
+          startAiMode={editorStart.mode}
         />
       )}
       {toast && <div className="toast">{toast}</div>}
@@ -1430,6 +1572,7 @@ function Grid(props: {
   iconSize: IconSize;
   edge: number;
   selected: string[];
+  meta: Record<string, Meta>;
   thumbSrc: (entry: Entry) => string | undefined;
   thumbRev: number;
   requestThumb: (entry: Entry, edge: number) => void;
@@ -1569,6 +1712,7 @@ function Grid(props: {
                       {entry.name}
                     </b>
                   )}
+                  <Badge meta={props.meta[entry.path]} />
                   {props.iconSize === "list" && !editingName && (
                     <>
                       <em>{entry.kind === "dir" ? "Carpeta" : fileExt(entry.name) || entry.kind}</em>
@@ -1711,6 +1855,23 @@ function TypeGlyph() {
   return (
     <svg width="18" height="16" viewBox="0 0 18 16" aria-hidden="true">
       <text x="9" y="12" textAnchor="middle" fontSize="10" fontWeight="600" fill="currentColor" fontFamily="Segoe UI, sans-serif">.ext</text>
+    </svg>
+  );
+}
+
+function StudioGlyph() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M2.5 3.5h11v7.2H7.2L4.4 13v-2.3H2.5z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+      <path d="M8 4.9l.55 1.45L10 6.9l-1.45.55L8 8.9l-.55-1.45L6 6.9l1.45-.55z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function FilterGlyph() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M2.5 3.5h11L9.4 8.4V13l-2.8-1.4V8.4z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
     </svg>
   );
 }

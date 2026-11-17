@@ -242,7 +242,12 @@ pub fn user_folder() -> Result<String, String> {
 }
 
 pub fn launch_folder() -> Option<String> {
-    std::env::args().skip(1).find_map(|arg| {
+    path_from_args(std::env::args().skip(1))
+}
+
+/// La primera ruta absoluta que exista entre los argumentos (las opciones `--algo` se saltan).
+pub fn path_from_args<I: IntoIterator<Item = String>>(args: I) -> Option<String> {
+    args.into_iter().find_map(|arg| {
         if arg.starts_with('-') {
             return None;
         }
@@ -463,6 +468,11 @@ fn is_jpeg(path: &Path) -> bool {
     matches!(extension(path).as_str(), "jpg" | "jpeg")
 }
 
+/// La foto se muestra reflejada (orientaciones EXIF 2, 4, 5 y 7): el sentido de un giro se invierte.
+pub fn is_mirrored(path: &Path) -> bool {
+    matches!(read_orientation(path), Ok(2 | 4 | 5 | 7))
+}
+
 fn read_orientation(path: &Path) -> Result<u16, String> {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         Metadata::new_from_path(path).map(|metadata| orientation_of(&metadata))
@@ -600,26 +610,33 @@ pub fn transform_many(root: &Path, paths: &[String], op: &str) -> BatchReport {
     report
 }
 
-pub fn paste_files(dest_dir: &Path, sources: &[String], cut: bool) -> BatchReport {
+pub fn paste_files(dest_dir: &Path, sources: &[String], cut: bool) -> (BatchReport, Vec<(String, String)>) {
     let mut report = BatchReport {
         done: Vec::new(),
         skipped: Vec::new(),
         errors: Vec::new(),
     };
+    let mut moved = Vec::new();
     let dest_dir = match canonical(dest_dir) {
         Ok(path) if path.is_dir() => path,
         _ => {
             report.errors.push("la carpeta de destino no existe".into());
-            return report;
+            return (report, moved);
         }
     };
     for source in sources {
         match paste_one(&dest_dir, Path::new(source), cut) {
-            Ok(path) => report.done.push(nice_path(&path)),
+            Ok(path) => {
+                let shown = nice_path(&path);
+                if &shown != source {
+                    moved.push((source.clone(), shown.clone()));
+                }
+                report.done.push(shown);
+            }
             Err(message) => report.errors.push(message),
         }
     }
-    report
+    (report, moved)
 }
 
 fn paste_one(dest_dir: &Path, source: &Path, cut: bool) -> Result<PathBuf, String> {
@@ -683,7 +700,9 @@ pub fn recycle_many(root: &Path, paths: &[String]) -> BatchReport {
     })
 }
 
-pub fn save_png(root: &Path, source: &Path, bytes: &[u8], mode: &str) -> Result<PathBuf, String> {
+/// Guarda la imagen editada en el mismo formato del original: JPG sigue siendo JPG y PNG sigue
+/// siendo PNG (el resto de formatos pasa a PNG). Conserva el EXIF del original.
+pub fn save_image(root: &Path, source: &Path, bytes: &[u8], mode: &str) -> Result<PathBuf, String> {
     let source = ensure_inside(root, source)?;
     let parent = source.parent().ok_or("el archivo no tiene carpeta")?;
     let stem = source
@@ -691,27 +710,49 @@ pub fn save_png(root: &Path, source: &Path, bytes: &[u8], mode: &str) -> Result<
         .unwrap_or_default()
         .to_string_lossy()
         .to_string();
-    let dest = if mode == "replace" && extension(&source) == "png" {
+    let jpeg = bytes.starts_with(&[0xFF, 0xD8]);
+    let ext = if jpeg {
+        if extension(&source) == "jpeg" { "jpeg" } else { "jpg" }
+    } else {
+        "png"
+    };
+    let same_kind = if jpeg { is_jpeg(&source) } else { extension(&source) == "png" };
+    let dest = if mode == "replace" && same_kind {
         source.clone()
     } else if mode == "replace" {
-        parent.join(format!("{stem}.png"))
+        parent.join(format!("{stem}.{ext}"))
     } else {
-        let mut path = parent.join(format!("{stem}-edit.png"));
+        let mut path = parent.join(format!("{stem}-edit.{ext}"));
         let mut n = 2u32;
         while path.exists() {
-            path = parent.join(format!("{stem}-edit-{n}.png"));
+            path = parent.join(format!("{stem}-edit-{n}.{ext}"));
             n += 1;
         }
         path
     };
+    // el EXIF se lee antes de escribir: con "reemplazar" el destino es el propio original
+    let exif = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| Metadata::new_from_path(&source).ok()))
+        .ok()
+        .flatten();
     if dest.exists() {
-        let tmp = dest.with_extension("png.photovisor-tmp");
+        let tmp = dest.with_extension(format!("{ext}.photovisor-tmp"));
         fs::write(&tmp, bytes).map_err(|e| e.to_string())?;
         replace_file(&tmp, &dest)?;
     } else {
         fs::write(&dest, bytes).map_err(|e| e.to_string())?;
     }
+    if let Some(meta) = exif {
+        restore_exif(&dest, meta);
+    }
     Ok(dest)
+}
+
+/// Copia el EXIF al archivo nuevo. Los píxeles ya salen derechos, así que la orientación vuelve a 1.
+fn restore_exif(dest: &Path, mut meta: Metadata) {
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        meta.set_tag(ExifTag::Orientation(vec![1u16]));
+        let _ = meta.write_to_file(dest);
+    }));
 }
 
 pub fn rename_entry(root: &Path, path: &Path, new_name: &str) -> Result<PathBuf, String> {
@@ -803,5 +844,49 @@ mod tests {
                 start
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod save_tests {
+    use super::*;
+
+    fn tiny_jpeg() -> Vec<u8> {
+        let img = image::RgbImage::from_pixel(8, 8, image::Rgb([200, 50, 120]));
+        let mut out = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 95)
+            .encode_image(&img)
+            .unwrap();
+        out
+    }
+
+    #[test]
+    fn jpg_sigue_siendo_jpg_y_conserva_exif() {
+        let dir = std::env::temp_dir().join(format!("pv-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("foto.jpg");
+        fs::write(&src, tiny_jpeg()).unwrap();
+        let mut meta = Metadata::new();
+        meta.set_tag(ExifTag::Make("Camara de prueba".to_string()));
+        meta.set_tag(ExifTag::Orientation(vec![6u16]));
+        meta.write_to_file(&src).unwrap();
+
+        let copy = save_image(&dir, &src, &tiny_jpeg(), "copy").unwrap();
+        assert_eq!(copy.file_name().unwrap(), "foto-edit.jpg");
+        let m = Metadata::new_from_path(&copy).unwrap();
+        assert_eq!(orientation_of(&m), 1, "los pixeles ya salen derechos");
+        assert!(m.get_tag_by_hex(0x010F, None).into_iter().count() > 0, "se pierde la marca de la camara");
+
+        let replaced = save_image(&dir, &src, &tiny_jpeg(), "replace").unwrap();
+        assert_eq!(replaced.file_name().unwrap(), "foto.jpg");
+        let m = Metadata::new_from_path(&src).unwrap();
+        assert!(m.get_tag_by_hex(0x010F, None).into_iter().count() > 0, "reemplazar borra el EXIF");
+
+        // un PNG sigue siendo PNG
+        let png = dir.join("otra.png");
+        fs::write(&png, [0x89, b'P', b'N', b'G']).unwrap();
+        let out = save_image(&dir, &png, &[0x89, b'P', b'N', b'G', 1, 2, 3], "copy").unwrap();
+        assert_eq!(out.file_name().unwrap(), "otra-edit.png");
+        let _ = fs::remove_dir_all(&dir);
     }
 }

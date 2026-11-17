@@ -69,12 +69,29 @@ export function userFolder() {
   return invoke<string>("user_folder");
 }
 
+export function launchArgs() {
+  return invoke<{ path: string | null; edit: boolean }>("launch_args");
+}
+
+export function studioInfo() {
+  return invoke<{ installed: boolean }>("studio_info");
+}
+
+/** Abre la foto en el Studio (app hermana, su propia ventana). */
+export function openInStudio(path: string) {
+  return invoke<void>("open_in_studio", { path });
+}
+
 export function launchFolder() {
   return invoke<string | null>("launch_folder");
 }
 
-export function saveEdit(source: string, dataB64: string, mode: "copy" | "replace") {
-  return invoke<string>("save_edit", { source, dataB64, mode });
+export function saveEdit(source: string, dataB64: string, mode: "copy" | "replace", format: "png" | "jpeg") {
+  return invoke<string>("save_edit", { source, dataB64, mode, format });
+}
+
+export function suggestTilt(path: string) {
+  return invoke<number | null>("suggest_tilt", { path });
 }
 
 export function renameFile(path: string, name: string) {
@@ -113,4 +130,19 @@ export type AiStatus = { comfy: boolean; studio: boolean };
 
 export function aiStatus() {
   return invoke<AiStatus>("ai_status");
+}
+
+export type Meta = { rating: number; label: string };
+
+export function catalogFolder(folder: string) {
+  return invoke<Record<string, Meta>>("catalog_folder", { folder });
+}
+
+/** `rating` y `label` en null no se tocan. Valoración 0 y etiqueta "" quitan cada dato. */
+export function catalogSet(paths: string[], rating: number | null, label: string | null) {
+  return invoke<void>("catalog_set", { paths, rating, label });
+}
+
+export function watchFolder(path: string) {
+  return invoke<void>("watch_folder", { path });
 }

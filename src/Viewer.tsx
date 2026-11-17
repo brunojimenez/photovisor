@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { mediaUrl, type Entry } from "./api";
+import { mediaUrl, type Entry, type Meta } from "./api";
+import { RatingBar } from "./Rating";
 
 type Props = {
   file: Entry;
@@ -13,7 +14,12 @@ type Props = {
   onClose: () => void;
   onToggleFilmstrip: () => void;
   onEdit: () => void;
+  /** Solo si el estudio está en el PC. */
+  onStudio?: () => void;
   canEdit: boolean;
+  meta?: Meta;
+  onRate: (rating: number) => void;
+  onLabel: (label: string) => void;
   playing: boolean;
   onTogglePlay: () => void;
   onFocus: (path: string) => void;
@@ -50,6 +56,7 @@ export function Viewer(props: Props) {
           <BackGlyph />
         </button>
         <strong>{props.file.name}</strong>
+        <RatingBar meta={props.meta} onRate={props.onRate} onLabel={props.onLabel} />
         <div className="seg" role="group" aria-label="Ajuste">
           <button
             className={fit === "fit" ? "on" : ""}
@@ -79,6 +86,11 @@ export function Viewer(props: Props) {
         >
           <PencilGlyph />
         </button>
+        {props.onStudio && (
+          <button className="icon-btn" title="Abrir en el Studio (IA: prompts, motores, quitar fondo, ampliar…)" aria-label="Abrir en el Studio" onClick={props.onStudio}>
+            <StudioGlyph />
+          </button>
+        )}
         <button
           className={props.playing ? "icon-btn on" : "icon-btn"}
           title={props.playing ? "Detener presentación" : "Presentación"}
@@ -208,6 +220,15 @@ function ChevronGlyph(props: { dir: "left" | "right" }) {
   return (
     <svg width="28" height="28" viewBox="0 0 16 16" aria-hidden="true">
       <path d={d} fill="none" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  );
+}
+
+function StudioGlyph() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M2.5 3.5h11v7.2H7.2L4.4 13v-2.3H2.5z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+      <path d="M8 4.9l.55 1.45L10 6.9l-1.45.55L8 8.9l-.55-1.45L6 6.9l1.45-.55z" fill="currentColor" />
     </svg>
   );
 }

@@ -1,0 +1,135 @@
+/*
+ * Línea visual compartida de la familia PhotoVisor + Studio: noche violeta con acento fucsia → violeta.
+ * Vive aquí, junto al editor compartido; PhotoVisor y el Studio la cargan después de sus propios CSS.
+ *   · Fondo: violeta casi negro, con grises teñidos (theme.generated.css de cada app, por scripts/gen-theme.py).
+ *   · Acción principal: degradado fucsia → violeta con texto blanco.
+ *   · Selección y herramienta activa: tinte fucsia + línea de degradado.
+ *   · Detalle de marca: hilo de degradado de 2 px en el borde superior.
+ *   · Carpetas en dorado cálido, como contrapunto al violeta.
+ */
+:root {
+  --bg: #0b0814;
+  --panel: #120e1f;
+  --panel2: #181229;
+  --line: #2a2142;
+  --text: #f1ecfa;
+  --muted: #9b90b8;
+  --faint: #5e5379;
+  --accent: #d946ef;
+  --accent-2: #8b5cf6;
+  --accent-soft: #f0abfc;
+  --brand: linear-gradient(135deg, #d946ef 0%, #8b5cf6 100%);
+  --tint: rgba(217, 70, 239, 0.16);
+  --danger: #e0627f;
+  --ok: #8fe3c0;
+}
+
+::selection { background: rgba(217, 70, 239, 0.45); color: #fff; }
+:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
+input[type="range"], input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
+
+/* barras de desplazamiento finas y violetas */
+* { scrollbar-width: thin; scrollbar-color: #4a3a73 transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: #3b2d5e;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: #6d4fc2; background-clip: padding-box; }
+
+/* hilo de marca en el borde superior de cada pantalla */
+.shell, .app { position: relative; }
+.shell::before, .viewer::before, .editor::before, .app::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--brand);
+  z-index: 60;
+  pointer-events: none;
+}
+
+/* acción principal: degradado */
+.btn-send,
+.text-btn.primary,
+.empty button,
+.viewer-bar .icon-btn.primary,
+.viewer-bar .icon-btn.on {
+  background: var(--brand);
+  color: #fff;
+  border-color: transparent;
+}
+.btn-send:hover:not(:disabled),
+.text-btn.primary:hover,
+.empty button:hover { filter: brightness(1.1); }
+.danger { background: var(--danger); color: #fff; }
+
+/* estados activos */
+.seg button.on, .sort-dir, .preview-tools button.on {
+  color: #fff;
+  background: var(--tint);
+}
+.seg button.on svg, .preview-tools button.on svg { color: var(--accent-soft); }
+.node.active { background: var(--tint); box-shadow: inset 2px 0 0 var(--accent); }
+.cell.selected { border-color: var(--accent); background: var(--tint); box-shadow: 0 0 0 1px var(--accent), 0 4px 18px rgba(217, 70, 239, 0.25); }
+.film button.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.node-ico.pc { color: var(--accent-soft); }
+
+/* editor: herramientas y fichas principales */
+.editor-tools .btn-ghost.on,
+.editor-bgmodes button.on {
+  color: #fff;
+  border-color: var(--accent);
+  background:
+    linear-gradient(90deg, var(--accent), var(--accent-2)) bottom / 100% 2px no-repeat,
+    var(--tint);
+  box-shadow: 0 0 14px rgba(217, 70, 239, 0.18);
+}
+.editor-tools .btn-ghost.on svg,
+.editor-bgmodes button.on .editor-bgico { color: var(--accent-soft); }
+.editor-bgmodes button.on .editor-bgico { background: rgba(217, 70, 239, 0.14); }
+.editor-seg button.on { background: #3a2a66; color: #fff; }
+.editor-compare-btn.on { background: var(--brand); color: #fff; border-color: transparent; }
+.editor-compare-tag { background: rgba(139, 92, 246, 0.85); }
+.adj-nudge:hover:not(:disabled), .adj-row .adj-val:not(:disabled):hover { color: var(--accent-soft); }
+.adj-ico { color: var(--accent-soft); border-color: #3a2d5c; }
+.editor-card { border-color: #2a2142; background: #0f0b1a; }
+.editor-card-title, .editor-sec { color: #a78bd6; }
+.editor-wm-icons button.on, .editor-places button.on, .editor-scales button.on { border-color: var(--accent); background: var(--tint); color: #fff; }
+.editor-swatch.on { border-color: var(--accent-soft); }
+
+/* looks, cuentagotas y color por tono */
+.editor-look.on, .editor-eyedrop.on { border-color: var(--accent); background: var(--tint); color: #fff; }
+.editor-hsl-dot.on { box-shadow: 0 0 0 2px var(--accent); }
+.editor-eyedrop:hover, .editor-look:hover { color: var(--accent-soft); }
+
+.menu button.on { background: var(--tint); }
+.menu-title { color: #a78bd6; }
+
+/* Studio: sesiones, opciones y galería con la misma marca */
+.session-item.active { background: var(--tint); border-color: #4a2f73; box-shadow: inset 2px 0 0 var(--accent); }
+.combo-opt.on { background: var(--tint); box-shadow: inset 0 0 0 1px var(--accent); }
+.btn-ghost.on, .btn-ico.on, .files-toggle.on { color: #fff; border-color: var(--accent); background: var(--tint); }
+.lora-choices button.on { border-color: var(--accent); color: #fff; background: var(--tint); }
+.pick.on { background: var(--brand); border-color: #fff; color: #fff; }
+.thumb-wrap.ref img { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.editor-crop { border-color: var(--accent-soft); }
+.editor-handle { background: var(--accent-soft); }
+
+/* botón de la app amiga (Editar en PhotoVisor / Abrir en el estudio) */
+.friend-btn svg { color: var(--accent-soft); }
+
+/* fichas de estilo con miniatura */
+.style-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+.style-tile { display: flex; flex-direction: column; gap: 5px; padding: 4px; text-align: center; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.style-tile:hover { border-color: #3a3a3a; }
+.style-tile.on { border-color: var(--accent); background: var(--tint); box-shadow: 0 0 0 1px var(--accent); }
+.style-thumb { display: block; aspect-ratio: 1; border-radius: 7px; overflow: hidden; background: var(--panel2); }
+.style-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.style-thumb b { display: grid; place-items: center; width: 100%; height: 100%; font-size: 22px; color: var(--muted); border: 1px dashed var(--line); border-radius: 7px; box-sizing: border-box; }
+.style-name { font-size: 11px; color: var(--text); }

@@ -1,4 +1,4 @@
-export type PaintFx = "blur" | "color" | "pixel" | "clone";
+export type PaintFx = "blur" | "color" | "pixel" | "clone" | "heal";
 
 export type PaintBox = { x: number; y: number; w: number; h: number };
 
@@ -137,6 +137,101 @@ function pixelated(src: Uint8ClampedArray, w: number, h: number, box: PaintBox, 
   return out;
 }
 
+function boxBlurF(src: Float32Array, w: number, h: number, r: number) {
+  const tmp = new Float32Array(src.length);
+  const out = new Float32Array(src.length);
+  const inv = 1 / (2 * r + 1);
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    let acc = 0;
+    for (let k = -r; k <= r; k++) acc += src[row + Math.min(w - 1, Math.max(0, k))];
+    for (let x = 0; x < w; x++) {
+      tmp[row + x] = acc * inv;
+      acc += src[row + Math.min(w - 1, x + r + 1)] - src[row + Math.max(0, x - r)];
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    let acc = 0;
+    for (let k = -r; k <= r; k++) acc += tmp[Math.min(h - 1, Math.max(0, k)) * w + x];
+    for (let y = 0; y < h; y++) {
+      out[y * w + x] = acc * inv;
+      acc += tmp[Math.min(h - 1, y + r + 1) * w + x] - tmp[Math.max(0, y - r) * w + x];
+    }
+  }
+  return out;
+}
+
+/**
+ * Rellena lo pintado con lo que lo rodea: promedio de los píxeles vecinos que no están pintados, probando
+ * radios cada vez más grandes hasta cubrir toda la mancha. Después le suma un grano parecido al de la foto
+ * para que el parche no se vea liso.
+ */
+function healed(src: Uint8ClampedArray, w: number, mask: Uint8ClampedArray, box: PaintBox) {
+  const bw = box.w;
+  const bh = box.h;
+  const n = bw * bh;
+  const known = new Float32Array(n);
+  const chans = [new Float32Array(n), new Float32Array(n), new Float32Array(n)];
+  let unknown = 0;
+  for (let y = 0; y < bh; y++) {
+    for (let x = 0; x < bw; x++) {
+      const i = (box.y + y) * w + box.x + x;
+      const k = y * bw + x;
+      if (mask[i * 4 + 3] > 6) {
+        unknown++;
+        continue;
+      }
+      known[k] = 1;
+      chans[0][k] = src[i * 4];
+      chans[1][k] = src[i * 4 + 1];
+      chans[2][k] = src[i * 4 + 2];
+    }
+  }
+  const out = new Uint8ClampedArray(src);
+  if (!unknown || unknown === n) return out;
+  const fill = new Float32Array(n * 3);
+  const done = new Uint8Array(n);
+  let left = unknown;
+  for (let r = 2; left > 0 && r < Math.max(bw, bh); r = Math.round(r * 1.6) + 1) {
+    const den = boxBlurF(known, bw, bh, r);
+    const num = chans.map((c) => boxBlurF(c, bw, bh, r));
+    for (let k = 0; k < n; k++) {
+      if (known[k] || done[k] || den[k] < 0.12) continue;
+      fill[k * 3] = num[0][k] / den[k];
+      fill[k * 3 + 1] = num[1][k] / den[k];
+      fill[k * 3 + 2] = num[2][k] / den[k];
+      done[k] = 1;
+      left--;
+    }
+  }
+  // grano: desviación del detalle fino en la zona sana
+  const luma = new Float32Array(n);
+  for (let k = 0; k < n; k++) luma[k] = 0.3 * chans[0][k] + 0.59 * chans[1][k] + 0.11 * chans[2][k];
+  const soft = boxBlurF(luma, bw, bh, 1);
+  let sum = 0;
+  let cnt = 0;
+  for (let k = 0; k < n; k++) {
+    if (!known[k]) continue;
+    sum += Math.abs(luma[k] - soft[k]);
+    cnt++;
+  }
+  const grain = Math.min(8, (cnt ? sum / cnt : 0) * 1.6);
+  for (let y = 0; y < bh; y++) {
+    for (let x = 0; x < bw; x++) {
+      const k = y * bw + x;
+      if (known[k] || !done[k]) continue;
+      const i = ((box.y + y) * w + box.x + x) * 4;
+      const hash = Math.sin((x + box.x) * 12.9898 + (y + box.y) * 78.233) * 43758.5453;
+      const noise = ((hash - Math.floor(hash)) - 0.5) * 2 * grain;
+      out[i] = fill[k * 3] + noise;
+      out[i + 1] = fill[k * 3 + 1] + noise;
+      out[i + 2] = fill[k * 3 + 2] + noise;
+      out[i + 3] = 255;
+    }
+  }
+  return out;
+}
+
 export function applyPaint(
   overlay: ImageData,
   source: ImageData,
@@ -147,14 +242,15 @@ export function applyPaint(
 ): PaintBox | null {
   const w = overlay.width;
   const h = overlay.height;
-  const pad = fx === "blur" ? blurRadius(strength) + 1 : fx === "pixel" ? pixelCell(strength) : 2;
+  const pad = fx === "blur" ? blurRadius(strength) + 1 : fx === "pixel" ? pixelCell(strength) : fx === "heal" ? 40 : 2;
   const box = maskBBox(mask.data, w, h, pad);
   if (!box || fx === "clone") return null;
-  const amt = Math.max(0.05, Math.min(1, strength / 100));
+  const amt = fx === "heal" ? 1 : Math.max(0.05, Math.min(1, strength / 100));
   const tint = parseHex(colorHex);
   let fxPix: Uint8ClampedArray | null = null;
   if (fx === "blur") fxPix = blurred(source.data, w, h, box, blurRadius(strength));
   else if (fx === "pixel") fxPix = pixelated(source.data, w, h, box, pixelCell(strength));
+  else if (fx === "heal") fxPix = healed(source.data, w, mask.data, box);
   const od = overlay.data;
   const md = mask.data;
   const sd = source.data;
@@ -163,7 +259,7 @@ export function applyPaint(
       const i = (y * w + x) * 4;
       const m = md[i + 3] / 255;
       if (m < 0.01) continue;
-      const a = m * amt;
+      const a = fx === "heal" ? Math.min(1, m * 1.6) : m * amt;
       let r: number;
       let g: number;
       let b: number;
