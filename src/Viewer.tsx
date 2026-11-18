@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { mediaUrl, type Entry, type Meta } from "./api";
 import { RatingBar } from "./Rating";
+import { ChevronGlyph, FitGlyph, RatioGlyph, StudioGlyph } from "./icons";
+import { ArrowLeft, Film, Pause, Play, SlidersHorizontal, Trash2 } from "lucide-react";
 
 type Props = {
   file: Entry;
@@ -14,6 +16,8 @@ type Props = {
   onClose: () => void;
   onToggleFilmstrip: () => void;
   onEdit: () => void;
+  onDelete: () => void;
+  busy: boolean;
   /** Solo si el estudio está en el PC. */
   onStudio?: () => void;
   canEdit: boolean;
@@ -53,7 +57,7 @@ export function Viewer(props: Props) {
     <div className="viewer">
       <div className="viewer-bar">
         <button className="icon-btn" title="Volver (Esc)" aria-label="Volver" onClick={props.onClose}>
-          <BackGlyph />
+          <ArrowLeft size={16} strokeWidth={1.75} aria-hidden />
         </button>
         <strong>{props.file.name}</strong>
         <RatingBar meta={props.meta} onRate={props.onRate} onLabel={props.onLabel} />
@@ -81,10 +85,13 @@ export function Viewer(props: Props) {
           className="icon-btn primary"
           onClick={props.onEdit}
           disabled={!props.canEdit}
-          title={props.canEdit ? "Editar (E)" : "El video solo se mira"}
+          title={props.canEdit ? "Editar" : "El video solo se mira"}
           aria-label="Editar"
         >
-          <PencilGlyph />
+          <SlidersHorizontal size={16} strokeWidth={1.75} aria-hidden />
+        </button>
+        <button className="icon-btn del" title="Eliminar" aria-label="Eliminar" disabled={props.busy} onClick={props.onDelete}>
+          <Trash2 size={16} strokeWidth={1.75} aria-hidden />
         </button>
         {props.onStudio && (
           <button className="icon-btn" title="Abrir en el Studio (IA: prompts, motores, quitar fondo, ampliar…)" aria-label="Abrir en el Studio" onClick={props.onStudio}>
@@ -97,7 +104,7 @@ export function Viewer(props: Props) {
           aria-label={props.playing ? "Detener presentación" : "Presentación"}
           onClick={props.onTogglePlay}
         >
-          {props.playing ? <PauseGlyph /> : <PlayGlyph />}
+          {props.playing ? <Pause size={16} strokeWidth={1.75} aria-hidden /> : <Play size={16} strokeWidth={1.75} aria-hidden />}
         </button>
         <button
           className={props.filmstrip ? "icon-btn on" : "icon-btn"}
@@ -105,7 +112,7 @@ export function Viewer(props: Props) {
           aria-label={props.filmstrip ? "Ocultar tira" : "Mostrar tira"}
           onClick={props.onToggleFilmstrip}
         >
-          <FilmGlyph />
+          <Film size={16} strokeWidth={1.75} aria-hidden />
         </button>
       </div>
       <div className="stage-wrap">
@@ -134,9 +141,9 @@ export function Viewer(props: Props) {
           drag.current = null;
         }}
         onDoubleClick={() => {
-          setFit("fit");
-          props.onZoom(1);
-          props.onPan({ x: 0, y: 0 });
+          // El doble clic en el video lo usa el propio reproductor (pantalla completa).
+          if (props.file.kind === "video") return;
+          props.onClose();
         }}
       >
         {props.file.kind === "video" ? (
@@ -191,86 +198,10 @@ export function Viewer(props: Props) {
   );
 }
 
-function FitGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path fill="none" stroke="currentColor" strokeWidth="1.4" d="M6 2H2v4M10 2h4v4M14 10v4h-4M2 10v4h4" />
-    </svg>
-  );
-}
-
-function RatioGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <rect x="1.5" y="3.5" width="13" height="9" fill="none" stroke="currentColor" strokeWidth="1.4" rx="1" />
-    </svg>
-  );
-}
-
 function NativeGlyph() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
       <text x="8" y="11" textAnchor="middle" fontSize="7.5" fill="currentColor" fontFamily="Segoe UI, sans-serif">1:1</text>
-    </svg>
-  );
-}
-
-function ChevronGlyph(props: { dir: "left" | "right" }) {
-  const d = props.dir === "left" ? "M11 2.5 4.5 8 11 13.5" : "M5 2.5 11.5 8 5 13.5";
-  return (
-    <svg width="28" height="28" viewBox="0 0 16 16" aria-hidden="true">
-      <path d={d} fill="none" stroke="currentColor" strokeWidth="1.6" />
-    </svg>
-  );
-}
-
-function StudioGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M2.5 3.5h11v7.2H7.2L4.4 13v-2.3H2.5z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-      <path d="M8 4.9l.55 1.45L10 6.9l-1.45.55L8 8.9l-.55-1.45L6 6.9l1.45-.55z" fill="currentColor" />
-    </svg>
-  );
-}
-
-function BackGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M7 3.2 2.4 8 7 12.8M3 8h10.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
-    </svg>
-  );
-}
-
-function PencilGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M9.2 3.2 12.8 6.8 5.5 14.1 2 14.9 2.8 11.4 9.2 3.2Z" fill="none" stroke="currentColor" strokeWidth="1.3" />
-      <path d="M8.2 4.2 11.8 7.8" fill="none" stroke="currentColor" strokeWidth="1.3" />
-    </svg>
-  );
-}
-
-function PlayGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M5 3.2v9.6L13 8 5 3.2Z" fill="currentColor" />
-    </svg>
-  );
-}
-
-function PauseGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M4.5 3.2h2.2v9.6H4.5zM9.3 3.2h2.2v9.6H9.3z" fill="currentColor" />
-    </svg>
-  );
-}
-
-function FilmGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <rect x="2" y="3" width="12" height="10" rx="1" fill="none" stroke="currentColor" strokeWidth="1.3" />
-      <path d="M2 6.2h12M2 9.8h12M5.2 3v10M10.8 3v10" fill="none" stroke="currentColor" strokeWidth="1.1" />
     </svg>
   );
 }

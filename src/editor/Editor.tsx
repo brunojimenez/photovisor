@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
+import {
+  ArrowLeft, Bandage, Focus, Brush, ClipboardCopy, Crop, Download, Eraser, Eye, FlipHorizontal2, FlipVertical2, Maximize, MoveHorizontal,
+  MoveVertical, Paintbrush, Palette, Pencil, Pipette, Replace, RotateCcw, RotateCcwSquare, RotateCwSquare, Save, SaveAll, Scaling,
+  SlidersHorizontal, Smile, Square, Stamp, Type, WandSparkles, Wrench, type LucideIcon,
+} from "lucide-react";
 import { ADJUST_ZERO, HSL_BANDS, STYLE_KINDS, applyAdjust, adjustIdle, type Adjust, type Band, type HslKey } from "./editorAdjust";
 import { PRESETS, presetAdjust } from "./editorPresets";
+import { LUCIDE_STICKERS, lucideNode } from "./lucideStickers";
 import { WM_COLOR_ICONS, WM_DEFAULT, drawPieces, drawWatermark, installedFonts, watermarkIdle, wmFont, type Piece, type Watermark } from "./editorMark";
 import { applyPaint, cloneCanvas, eraseOverlay, type PaintFx } from "./editorPaint";
 
@@ -391,6 +397,19 @@ export default function Editor({
   const redoRef = useRef<HTMLCanvasElement[]>([]);
   const beforeRef = useRef<HTMLCanvasElement | null>(null);
   const stroking = useRef(false);
+  // Foco: círculos que quedan nítidos; el efecto (difuminar, pixelar, color) va afuera (o adentro) con borde difuso
+  const focusCircles = useRef<{ x: number; y: number; r: number }[]>([]);
+  const focusDrag = useRef<{ x: number; y: number; r: number } | null>(null);
+  const focusOnRef = useRef(false);
+  const brushMaxRef = useRef(220);
+  const focusSoftRef = useRef(45);
+  const focusInsideRef = useRef(false);
+  const [focusOn, setFocusOn] = useState(false);
+  const [focusSoft, setFocusSoft] = useState(45);
+  const [focusInside, setFocusInside] = useState(false);
+  const [focusN, setFocusN] = useState(0);
+  const focusKRef = useRef(1);
+  const [focusK, setFocusK] = useState(1);
   const [ready, setReady] = useState(false);
   const [adj, setAdj] = useState<Adjust>(ADJUST_ZERO);
   const [rot, setRot] = useState(0);
@@ -510,6 +529,9 @@ export default function Editor({
   const [noteText, setNoteText] = useState("");
   const [noteFont, setNoteFont] = useState("Segoe UI");
   const [noteColor, setNoteColor] = useState("#ffffff");
+  const [stickColor, setStickColor] = useState("#ffffff");
+  const [stickColor2, setStickColor2] = useState("#ff4fa3");
+  const [stickLook, setStickLook] = useState<"solid" | "gradient" | "rainbow">("solid");
   const [pieceSize, setPieceSize] = useState(72);
   const [clonePick, setClonePick] = useState(false);
   const [cloneOn, setCloneOn] = useState(false);
@@ -544,6 +566,11 @@ export default function Editor({
   brushRef.current = brush;
   hardnessRef.current = hardness;
   paintFxRef.current = paintFx;
+  focusOnRef.current = focusOn && (paintFx === "blur" || paintFx === "pixel" || paintFx === "color");
+  focusSoftRef.current = focusSoft;
+  focusInsideRef.current = focusInside;
+  const brushMax = Math.max(220, Math.min(3000, Math.round(Math.max(work().w, work().h) * 0.5)));
+  brushMaxRef.current = brushMax;
   paintStrengthRef.current = paintStrength;
   paintColorRef.current = paintColor;
 
@@ -692,6 +719,132 @@ export default function Editor({
     stroking.current = true;
     lastPaint.current = null;
   }
+
+  /** Dibuja en la capa de trazo los círculos del foco (opacos al centro, con caída suave hacia el borde). */
+  function drawFocus() {
+    const stroke = ensureStroke();
+    const ctx = stroke.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, stroke.width, stroke.height);
+    const list = focusDrag.current ? [...focusCircles.current, focusDrag.current] : focusCircles.current;
+    const soft = focusSoftRef.current / 100;
+    for (const c of list) {
+      const r = Math.max(2, c.r * focusKRef.current);
+      const inner = Math.min(r - 0.5, r * (1 - soft));
+      const g = ctx.createRadialGradient(c.x, c.y, Math.max(0, inner), c.x, c.y, r);
+      g.addColorStop(0, "rgba(255,255,255,1)");
+      g.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    stroking.current = list.length > 0;
+    setPaintTick((n) => n + 1);
+  }
+
+  /** El foco usa radios proporcionales al tamaño de la foto: un difuminado de 30 px no se nota en una foto de 4000 px. */
+  function focusScale(w: number, h: number) {
+    return focusOnRef.current ? Math.min(8, Math.max(0.2, Math.max(w, h) / 1000)) : 1;
+  }
+
+  /** Con el foco, el efecto va fuera de los círculos (la máscara se invierte) salvo que se pida adentro. */
+  function focusMask(mk: ImageData) {
+    if (focusInsideRef.current) return;
+    const d = mk.data;
+    for (let i = 3; i < d.length; i += 4) d[i] = 255 - d[i];
+  }
+
+  function clearFocus() {
+    const had = focusCircles.current.length > 0 || focusDrag.current !== null;
+    focusCircles.current = [];
+    focusDrag.current = null;
+    focusKRef.current = 1;
+    setFocusK(1);
+    setFocusN(0);
+    if (!had) return;
+    const stroke = strokeRef.current;
+    stroke?.getContext("2d")?.clearRect(0, 0, stroke.width, stroke.height);
+    stroking.current = false;
+    setPaintTick((n) => n + 1);
+  }
+
+  function finishCircle() {
+    const d = focusDrag.current;
+    if (!d) return;
+    focusDrag.current = null;
+    const { w, h } = work();
+    const k = focusKRef.current;
+    focusCircles.current.push({ x: d.x, y: d.y, r: d.r * k < 8 ? (Math.min(w, h) * 0.25) / k : d.r });
+    setFocusN(focusCircles.current.length);
+    drawFocus();
+  }
+
+  /** Viñeta de efecto: el centro queda nítido y hacia los bordes se difumina/pixela. */
+  function focusVignette() {
+    const { w, h } = work();
+    focusDrag.current = null;
+    focusKRef.current = 1;
+    setFocusK(1);
+    focusCircles.current = [{ x: w / 2, y: h / 2, r: Math.hypot(w, h) * 0.42 }];
+    focusSoftRef.current = 70;
+    setFocusSoft(70);
+    setFocusN(1);
+    drawFocus();
+  }
+
+  function changeFocusSoft(v: number) {
+    focusSoftRef.current = v;
+    setFocusSoft(v);
+    if (focusCircles.current.length) drawFocus();
+  }
+
+  function changeFocusK(v: number) {
+    focusKRef.current = v / 100;
+    setFocusK(v / 100);
+    if (focusCircles.current.length) drawFocus();
+  }
+
+  function changeFocusInside(v: boolean) {
+    focusInsideRef.current = v;
+    setFocusInside(v);
+    if (focusCircles.current.length) setPaintTick((n) => n + 1);
+  }
+
+  /** Pasa el foco a la capa de pintura, como un paso que se puede deshacer. */
+  function applyFocus() {
+    const stroke = strokeRef.current;
+    const img = imgRef.current;
+    if (!stroke || !img || focusCircles.current.length === 0) return;
+    const overlay = ensureOverlay();
+    const octx = overlay.getContext("2d");
+    const { w, h } = work();
+    const src = raster(img, rot, flipH, flipV, w, h, adj, tilt);
+    const sctx = src?.getContext("2d");
+    const mk = stroke.getContext("2d")?.getImageData(0, 0, w, h);
+    if (!octx || !src || !sctx || !mk) return;
+    const before = cloneCanvas(overlay);
+    sctx.drawImage(overlay, 0, 0);
+    const source = sctx.getImageData(0, 0, w, h);
+    const ov = octx.getImageData(0, 0, w, h);
+    focusMask(mk);
+    applyPaint(ov, source, mk, paintFxRef.current, paintStrengthRef.current, paintColorRef.current, focusScale(w, h));
+    octx.putImageData(ov, 0, 0);
+    undoRef.current.push(before);
+    if (undoRef.current.length > 16) undoRef.current.shift();
+    redoRef.current = [];
+    clearFocus();
+    syncUndo();
+  }
+
+  useEffect(() => {
+    if (focusCircles.current.length > 0) setPaintTick((n) => n + 1);
+  }, [paintStrength]);
+
+  useEffect(() => {
+    if (!(tool === "paint" && focusOn && (paintFx === "blur" || paintFx === "pixel" || paintFx === "color"))) clearFocus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tool, focusOn, paintFx]);
 
   function commitStroke() {
     if (!stroking.current) return;
@@ -994,6 +1147,17 @@ export default function Editor({
     }
   }
 
+  /** Cambia color/estilo de los íconos: lo que se agregue de ahora en adelante y el ícono seleccionado. */
+  function patchStick(patch: { color?: string; color2?: string; look?: "solid" | "gradient" | "rainbow" }) {
+    if (patch.color !== undefined) setStickColor(patch.color);
+    if (patch.color2 !== undefined) setStickColor2(patch.color2);
+    if (patch.look !== undefined) setStickLook(patch.look);
+    if (!pieceFresh.current && pieces.some((p) => p.id === pieceId && p.kind === "icon")) {
+      snapPieces("");
+      setPieces((list) => list.map((p) => (p.id === pieceId && p.kind === "icon" ? { ...p, ...patch } : p)));
+    }
+  }
+
   function addPiece(kind: "icon" | "text", x: number, y: number) {
     snapPieces("");
     pieceFresh.current = true;
@@ -1007,7 +1171,8 @@ export default function Editor({
       icon: stickIcon,
       text: noteText.trim().slice(0, 80),
       font: noteFont,
-      color: noteColor,
+      color: kind === "icon" ? stickColor : noteColor,
+      ...(kind === "icon" ? { look: stickLook, color2: stickColor2 } : {}),
     };
     setPieces((list) => [...list, piece]);
     setPieceId(id);
@@ -1166,11 +1331,44 @@ export default function Editor({
         const source = tctx.getImageData(0, 0, dw, dh);
         const ov = new ImageData(new Uint8ClampedArray(source.data), dw, dh);
         const mk = mctx.getImageData(0, 0, dw, dh);
+        if (focusOnRef.current) focusMask(mk);
         if (markRef.current === "eraser") eraseOverlay(ov, mk);
-        else applyPaint(ov, source, mk, paintFxRef.current, paintStrengthRef.current, paintColorRef.current);
+        else applyPaint(ov, source, mk, paintFxRef.current, paintStrengthRef.current, paintColorRef.current, focusScale(dw, dh));
         tctx.putImageData(ov, 0, 0);
         ctx.drawImage(tmp, 0, 0);
       }
+    }
+    if (toolRef.current === "paint" && focusOnRef.current && !compareRef.current) {
+      const k = dw / work().w;
+      const soft = focusSoftRef.current / 100;
+      const list = focusDrag.current ? [...focusCircles.current, focusDrag.current] : focusCircles.current;
+      ctx.save();
+      for (const c of list) {
+        const r = Math.max(2, c.r * focusKRef.current) * k;
+        const ring = (radius: number, color: string, width: number, dash: number[]) => {
+          ctx.beginPath();
+          ctx.arc(c.x * k, c.y * k, radius, 0, Math.PI * 2);
+          ctx.setLineDash(dash);
+          ctx.lineWidth = width;
+          ctx.strokeStyle = color;
+          ctx.stroke();
+        };
+        ring(r, "rgba(0,0,0,0.6)", 4, []);
+        ring(r, "#ffffff", 1.75, [8, 6]);
+        if (soft > 0.05) {
+          ring(r * (1 - soft), "rgba(0,0,0,0.45)", 3, []);
+          ring(r * (1 - soft), "#8ab4f8", 1.25, [3, 4]);
+        }
+        ctx.setLineDash([]);
+        ctx.fillStyle = "#ffffff";
+        ctx.strokeStyle = "rgba(0,0,0,0.7)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(c.x * k, c.y * k, 4, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fill();
+      }
+      ctx.restore();
     }
     const mask = aiModeRef.current === "replace" ? maskRef.current : personMaskRef.current;
     if (toolRef.current === "fill" && aiModeRef.current !== "upscale" && aiModeRef.current !== "style" && mask && !compareRef.current) {
@@ -1427,7 +1625,7 @@ export default function Editor({
         return;
       }
       if (e.key === "[") setBrush((n) => Math.max(4, n - 4));
-      if (e.key === "]") setBrush((n) => Math.min(220, n + 4));
+      if (e.key === "]") setBrush((n) => Math.min(brushMaxRef.current, n + (brushMaxRef.current > 600 ? 12 : 4)));
       if (e.key === "e" || e.key === "E") setMark("eraser");
       if (e.key === "b" || e.key === "B") setMark("brush");
       if (e.key === "p" || e.key === "P") setMark("pencil");
@@ -1585,6 +1783,12 @@ export default function Editor({
         setErr("Fijá el origen con Shift+clic o con el botón Origen.");
         return;
       }
+      if (focusOnRef.current) {
+        e.currentTarget.setPointerCapture(e.pointerId);
+        focusDrag.current = { x: p.x, y: p.y, r: 0 };
+        drawFocus();
+        return;
+      }
       e.currentTarget.setPointerCapture(e.pointerId);
       if (paintFxRef.current === "clone") {
         beginClone();
@@ -1663,6 +1867,12 @@ export default function Editor({
       });
       return;
     }
+    if (toolRef.current === "paint" && (e.buttons & 1) && focusDrag.current) {
+      const p = toImage(e.clientX, e.clientY, e.currentTarget);
+      focusDrag.current.r = Math.hypot(p.x - focusDrag.current.x, p.y - focusDrag.current.y) / focusKRef.current;
+      drawFocus();
+      return;
+    }
     if (toolRef.current === "paint" && (e.buttons & 1)) {
       const p = toImage(e.clientX, e.clientY, e.currentTarget);
       if (paintFxRef.current === "clone") stampClone(p.x, p.y);
@@ -1733,7 +1943,8 @@ export default function Editor({
   }
 
   function onPointerUp() {
-    if (stroking.current) commitStroke();
+    if (focusDrag.current) finishCircle();
+    else if (stroking.current && !focusOnRef.current) commitStroke();
     lastPaint.current = null;
     panDrag.current = null;
     pieceDrag.current = null;
@@ -2227,14 +2438,6 @@ export default function Editor({
           )}
           {pending && pendingLabel && <p className="hint editor-job">{pendingLabel}</p>}
           <div className="editor-actions">
-              <button type="button" className="btn-ghost" disabled={busy} onClick={resetAll}>
-                Restablecer
-              </button>
-              {pending && onCancelJob && (
-                <button type="button" className="btn-ghost" title="Cortar el trabajo en ComfyUI" onClick={onCancelJob}>
-                  Cortar
-                </button>
-              )}
               <div className="editor-save">
                 {local && !folderSave ? (
                   <button type="button" className="btn-send" title="Descargar PNG" disabled={!ready || busy} onClick={() => void save("copy")}>
@@ -2256,76 +2459,77 @@ export default function Editor({
                   <GlyphIcon name="clipboard" size={18} />
                 </button>
               </div>
-            </div>
-          <div
-            className="editor-scale-row"
-            title={`Escala del PNG al guardar. No usa IA.${local ? " La marca entra en el archivo." : " Para agrandar de verdad, IA → Ampliar."}`}
-          >
-            <span>
+              {pending && onCancelJob && (
+                <button type="button" className="btn-ghost" title="Cortar el trabajo en ComfyUI" onClick={onCancelJob}>
+                  Cortar
+                </button>
+              )}
+              <span className="editor-save-size">
               Al guardar {Math.round(c.w)}×{Math.round(c.h)}
               {outScale !== 1 ? ` → ${Math.round(c.w * outScale)}×${Math.round(c.h * outScale)}` : ""}
             </span>
-            <div className="editor-seg" role="group" aria-label="Escala al guardar">
-              {[1, 1.5, 2].map((s) => (
-                <button key={s} type="button" className={outScale === s ? "on" : ""} onClick={() => setOutScale(s)}>
-                  {s}×
-                </button>
-              ))}
+              <div
+                className="editor-seg editor-scale-seg"
+                role="group"
+                aria-label="Escala al guardar"
+                title={`Escala del PNG al guardar. No usa IA.${local ? " La marca entra en el archivo." : " Para agrandar de verdad, IA → Ampliar."}`}
+              >
+                {[1, 1.5, 2].map((s) => (
+                  <button key={s} type="button" className={outScale === s ? "on" : ""} onClick={() => setOutScale(s)}>
+                    {s}×
+                  </button>
+                ))}
+              </div>
+              <button type="button" className="btn-ghost editor-ico-btn editor-reset" title="Restablecer" aria-label="Restablecer" disabled={busy} onClick={resetAll}>
+                <GlyphIcon name="reset" size={18} />
+              </button>
             </div>
-          </div>
           <div className="editor-side-main">
             <div className="editor-tools">
-              <button type="button" className={`btn-ghost ${tool === "adjust" ? "on" : ""}`} title="Ajustar" onClick={() => setTool("adjust")}>
-                <GlyphIcon name="adjust" />
-                <span>Ajustar</span>
+              <button type="button" className={`btn-ghost ${tool === "adjust" ? "on" : ""}`} title="Ajustar" aria-label="Ajustar" onClick={() => setTool("adjust")}>
+                <GlyphIcon name="tools" size={20} />
               </button>
-              <button type="button" className={`btn-ghost ${tool === "crop" ? "on" : ""}`} title="Recortar, girar y voltear" onClick={() => setTool("crop")}>
-                <GlyphIcon name="crop" />
-                <span>Posición</span>
+              <button type="button" className={`btn-ghost ${tool === "crop" ? "on" : ""}`} title="Posición (recortar, girar y voltear)" aria-label="Posición" onClick={() => setTool("crop")}>
+                <GlyphIcon name="crop" size={20} />
               </button>
               <button
                 type="button"
                 className={`btn-ghost ${tool === "paint" ? "on" : ""}`}
-                title="Pincel"
+                title="Pincel" aria-label="Pincel"
                 onClick={() => {
                   setTool("paint");
                   ensureOverlay();
                   setPaintTick((n) => n + 1);
                 }}
               >
-                <GlyphIcon name="paint" />
-                <span>Pincel</span>
+                <GlyphIcon name="paint" size={20} />
               </button>
-              <button type="button" className={`btn-ghost ${tool === "stick" ? "on" : ""}`} title="Íconos sobre la foto" onClick={() => setTool("stick")}>
-                <GlyphIcon name="stick" />
-                <span>Ícono</span>
+              <button type="button" className={`btn-ghost ${tool === "stick" ? "on" : ""}`} title="Íconos sobre la foto" aria-label="Íconos" onClick={() => setTool("stick")}>
+                <GlyphIcon name="stick" size={20} />
               </button>
-              <button type="button" className={`btn-ghost ${tool === "text" ? "on" : ""}`} title="Texto suelto" onClick={() => setTool("text")}>
-                <GlyphIcon name="text" />
-                <span>Texto</span>
+              <button type="button" className={`btn-ghost ${tool === "text" ? "on" : ""}`} title="Texto" aria-label="Texto" onClick={() => setTool("text")}>
+                <GlyphIcon name="text" size={20} />
               </button>
               <button
                 type="button"
                 className={`btn-ghost ${tool === "wm" ? "on" : ""}`}
-                title="Marca de agua"
+                title="Marca de agua" aria-label="Marca de agua"
                 onClick={() => setTool("wm")}
               >
-                <GlyphIcon name="wm" />
-                <span>Marca</span>
+                <GlyphIcon name="wm" size={20} />
               </button>
               {!local && (
               <button
                 type="button"
                 className={`btn-ghost ${tool === "fill" ? "on" : ""}`}
-                title="Editar con IA"
+                title="Editar con IA" aria-label="IA"
                 onClick={() => {
                   setTool("fill");
                   ensureMask();
                   setMaskTick((n) => n + 1);
                 }}
               >
-                <GlyphIcon name="ai" />
-                <span>IA</span>
+                <GlyphIcon name="ai" size={20} />
               </button>
               )}
             </div>
@@ -2568,14 +2772,57 @@ export default function Editor({
                       </button>
                     </div>
                   )}
-                  <OptRow label="Grosor" value={brush} min={4} max={220} def={36} onChange={setBrush} />
+                  <OptRow label="Grosor" value={brush} min={4} max={brushMax} def={36} onChange={setBrush} />
                   {paintFx !== "clone" && paintFx !== "heal" && (
                     <OptRow label="Intensidad" value={paintStrength} min={10} max={100} def={50} onChange={setPaintStrength} />
                   )}
                 </div>
+                {(paintFx === "blur" || paintFx === "pixel" || paintFx === "color") && (
+                  <Card title="Foco">
+                    <button
+                      type="button"
+                      className={`focus-toggle ${focusOn ? "on" : ""}`}
+                      aria-pressed={focusOn}
+                      onClick={() => setFocusOn((v) => !v)}
+                      title="Deja zonas circulares nítidas y aplica el efecto en el resto (o al revés)"
+                    >
+                      <Focus size={18} strokeWidth={1.75} aria-hidden />
+                      <span>
+                        <b>{focusOn ? "Foco activado" : "Activar foco"}</b>
+                        <small>{focusOn ? "Arrastrá sobre la foto desde el centro hacia afuera" : "Círculos nítidos, efecto en el resto"}</small>
+                      </span>
+                    </button>
+                    {focusOn && (
+                      <>
+                        <div className="editor-seg" role="group" aria-label="Dónde va el efecto">
+                          <button type="button" className={!focusInside ? "on" : ""} onClick={() => changeFocusInside(false)} title="El círculo queda nítido y el resto lleva el efecto">
+                            Efecto afuera
+                          </button>
+                          <button type="button" className={focusInside ? "on" : ""} onClick={() => changeFocusInside(true)} title="El efecto va dentro del círculo">
+                            Efecto adentro
+                          </button>
+                        </div>
+                        <OptRow label="Tamaño" value={Math.round(focusK * 100)} min={20} max={300} def={100} onChange={changeFocusK} hint="Agranda o achica todos los círculos marcados, antes de aplicar" />
+                        <OptRow label="Borde suave" value={focusSoft} min={0} max={100} def={45} onChange={changeFocusSoft} hint="Qué tan gradual es la transición entre la zona nítida y el efecto" />
+                        <p className="hint">Tamaño y borde se pueden ajustar antes de Aplicar. La intensidad es la de arriba. Línea blanca: borde; azul: inicio de la transición.</p>
+                        <div className="focus-actions">
+                          <button type="button" className="btn-ghost" onClick={focusVignette} title="Centro nítido y bordes con el efecto">
+                            Viñeta
+                          </button>
+                          <button type="button" className="btn-ghost" disabled={focusN === 0} onClick={clearFocus}>
+                            Limpiar
+                          </button>
+                          <button type="button" className="btn-send focus-apply" disabled={focusN === 0} onClick={applyFocus}>
+                            Aplicar{focusN > 0 ? ` (${focusN})` : ""}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </Card>
+                )}
                 {paintFx !== "clone" && (
                   <div className="editor-card">
-                    <p className="editor-card-title">Borde</p>
+                    <p className="editor-card-title">Borde del pincel</p>
                     <div className="editor-seg" role="group" aria-label="Tipo de borde">
                       {([["Duro", 100], ["Suave", 50], ["Difuso", 15]] as const).map(([label, v]) => (
                         <button key={label} type="button" className={hardness === v ? "on" : ""} title={`Bordes ${label.toLowerCase()}`} onClick={() => setHardness(v)}>
@@ -2623,6 +2870,21 @@ export default function Editor({
               <>
                 <IconPalette label="Íconos color" items={WM_COLOR_ICONS} isOn={(ch) => stickIcon === ch} onPick={pickStickIcon} prefix="Usar" />
                 <IconPalette label="Íconos trazo" items={WM_TRACE} isOn={(ch) => stickIcon === ch} onPick={pickStickIcon} prefix="Usar" />
+                <IconPalette label="Pack de íconos" items={LUCIDE_STICKERS} isOn={(ch) => stickIcon === ch} onPick={pickStickIcon} prefix="Usar" />
+                <Card title="Color y estilo">
+                  <div className="editor-seg" role="group" aria-label="Estilo del color">
+                    {([["solid", "Liso"], ["gradient", "Degradado"], ["rainbow", "Arcoíris"]] as const).map(([id, name]) => (
+                      <button key={id} type="button" className={stickLook === id ? "on" : ""} onClick={() => patchStick({ look: id })}>
+                        {name}
+                      </button>
+                    ))}
+                  </div>
+                  {stickLook !== "rainbow" && (
+                    <StickSwatches label={stickLook === "gradient" ? "Desde" : "Color"} value={stickColor} onPick={(hex) => patchStick({ color: hex })} />
+                  )}
+                  {stickLook === "gradient" && <StickSwatches label="Hasta" value={stickColor2} onPick={(hex) => patchStick({ color2: hex })} />}
+                  {WM_COLOR_ICONS.some((i) => i.ch === stickIcon) && <p className="hint">Los íconos de color ya traen sus colores; esto vale para los de trazo.</p>}
+                </Card>
                 <Card title="Tamaño">
                 <OptRow
                   label="Tamaño"
@@ -2641,7 +2903,7 @@ export default function Editor({
                 <div className="editor-undo">
                   <button
                     type="button"
-                    className="btn-ghost"
+                    className="btn-ghost del"
                     disabled={!pieces.some((p) => p.id === pieceId)}
                     onClick={() => {
                       snapPieces("");
@@ -2730,7 +2992,7 @@ export default function Editor({
                 <div className="editor-undo">
                   <button
                     type="button"
-                    className="btn-ghost"
+                    className="btn-ghost del"
                     disabled={!pieces.some((p) => p.id === pieceId && p.kind === "text")}
                     onClick={() => {
                       snapPieces("");
@@ -2955,7 +3217,7 @@ export default function Editor({
                         </button>
                       ))}
                     </div>
-                    <OptRow label="Grosor" value={brush} min={4} max={220} def={36} onChange={setBrush} />
+                    <OptRow label="Grosor" value={brush} min={4} max={brushMax} def={36} onChange={setBrush} />
                     <div className="editor-tools" style={{ marginTop: 12 }}>
                       <button type="button" className="btn-ghost" onClick={clearMask}>
                         Limpiar máscara
@@ -3056,7 +3318,7 @@ export default function Editor({
                         </button>
                       ))}
                     </div>
-                    <OptRow label="Grosor" value={brush} min={4} max={220} def={36} onChange={setBrush} />
+                    <OptRow label="Grosor" value={brush} min={4} max={brushMax} def={36} onChange={setBrush} />
                     <div className="editor-tools" style={{ marginTop: 12 }}>
                       <button type="button" className="btn-ghost" onClick={clearMask}>
                         Limpiar marca
@@ -3236,6 +3498,8 @@ export default function Editor({
 }
 
 type Glyph =
+  | "tools"
+  | "reset"
   | "adjust"
   | "crop"
   | "style"
@@ -3282,7 +3546,18 @@ type Glyph =
   | "fitbox"
   | keyof Adjust;
 
+/** Íconos del pack Lucide; los que no están aquí siguen con el dibujo propio de abajo. */
+const LUCIDE: Partial<Record<Glyph, LucideIcon>> = {
+  tools: Wrench, reset: RotateCcw, adjust: SlidersHorizontal, crop: Crop, style: Palette, eyedrop: Pipette, heal: Bandage, back: ArrowLeft,
+  save: Save, savecopy: SaveAll, clipboard: ClipboardCopy, download: Download, paint: Paintbrush, stick: Smile, text: Type, wm: Stamp,
+  ai: WandSparkles, replace: Replace, upscale: Scaling, eraser: Eraser, brush: Brush, pencil: Pencil, rotl: RotateCcwSquare,
+  rotr: RotateCwSquare, fliph: FlipHorizontal2, flipv: FlipVertical2, fith: MoveHorizontal, fitv: MoveVertical, fitbox: Maximize,
+  eye: Eye, solid: Square,
+};
+
 function GlyphIcon({ name, size = 16 }: { name: Glyph; size?: number }) {
+  const Lucide = LUCIDE[name];
+  if (Lucide) return <Lucide size={size} strokeWidth={1.75} aria-hidden />;
   const s = {
     fill: "none",
     stroke: "currentColor",
@@ -3300,6 +3575,16 @@ function GlyphIcon({ name, size = 16 }: { name: Glyph; size?: number }) {
           <circle cx="7" cy="12" r="1.3" fill="currentColor" />
         </>
       )}
+      {name === "tools" && (
+        <>
+          <path
+            {...s}
+            transform="scale(.6667)"
+            strokeWidth={2}
+            d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"
+          />
+        </>
+      )}
       {name === "save" && (
         <>
           <path {...s} d="M3 2.5h8.2l2.3 2.3V13a.5.5 0 0 1-.5.5H3a.5.5 0 0 1-.5-.5V3a.5.5 0 0 1 .5-.5Z" />
@@ -3308,9 +3593,14 @@ function GlyphIcon({ name, size = 16 }: { name: Glyph; size?: number }) {
       )}
       {name === "savecopy" && (
         <>
-          <path {...s} d="M5.8 5.8h7.4v7.4H5.8z" />
-          <path {...s} d="M3.6 10.2V3.6h6.6" />
-          <path {...s} d="M9.5 7.8v3.4M7.8 9.5h3.4" />
+          <rect {...s} x="5.6" y="5.6" width="8" height="8" rx="1.3" />
+          <path {...s} d="M10.4 5.6V3.9a1.3 1.3 0 0 0-1.3-1.3H3.9a1.3 1.3 0 0 0-1.3 1.3v5.2a1.3 1.3 0 0 0 1.3 1.3h1.7" />
+        </>
+      )}
+      {name === "reset" && (
+        <>
+          <path {...s} d="M2.4 8a5.6 5.6 0 1 0 1.7-4L2.4 5.6" />
+          <path {...s} d="M2.4 2.6v3h3" />
         </>
       )}
       {name === "clipboard" && (
@@ -3422,7 +3712,14 @@ function GlyphIcon({ name, size = 16 }: { name: Glyph; size?: number }) {
         </>
       )}
       {name === "crop" && <path {...s} d="M5 2.4v8.2H13.2M2.4 5H11v8.6" />}
-      {name === "stick" && <path {...s} d="M8 2.2 9.5 6.2 13.6 6.4 10.5 9 11.6 13.2 8 10.8 4.4 13.2 5.5 9 2.4 6.4 6.5 6.2z" />}
+      {name === "stick" && (
+        <>
+          <circle {...s} cx="8" cy="8" r="5.8" />
+          <circle cx="5.9" cy="6.6" r=".6" fill="currentColor" />
+          <circle cx="10.1" cy="6.6" r=".6" fill="currentColor" />
+          <path {...s} d="M5.2 9.4c.7 1.4 1.7 2 2.8 2s2.1-.6 2.8-2" />
+        </>
+      )}
       {name === "text" && <path {...s} d="M3.2 3.2h9.6M8 3.2v9.6M5.6 12.8h4.8" />}
       {name === "clone" && (
         <>
@@ -3553,6 +3850,43 @@ function GlyphIcon({ name, size = 16 }: { name: Glyph; size?: number }) {
   );
 }
 
+/** Vista previa en la paleta de un ícono del pack (mismos trazos que se dibujan sobre la foto). */
+function LucideSticker({ icon }: { icon: string }) {
+  const node = lucideNode(icon);
+  if (!node) return null;
+  return (
+    <svg viewBox="0 0 24 24" width={20} height={20} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      {node.map(([tag, attrs], i) => {
+        const Tag = tag as "path";
+        return <Tag key={i} {...(attrs as object)} />;
+      })}
+    </svg>
+  );
+}
+
+const STICK_SWATCHES = ["#ffffff", "#111111", "#ff3b30", "#ff9500", "#ffd60a", "#34c759", "#3ec4e0", "#0a84ff", "#af52de", "#ff4fa3"];
+
+/** Fila de colores + selector libre. */
+function StickSwatches(props: { label: string; value: string; onPick: (hex: string) => void }) {
+  return (
+    <div className="editor-swatches stick-swatches" aria-label={props.label}>
+      <span className="stick-swatch-label">{props.label}</span>
+      {STICK_SWATCHES.map((hex) => (
+        <button
+          key={hex}
+          type="button"
+          className={`editor-swatch ${props.value.toLowerCase() === hex ? "on" : ""}`}
+          style={{ background: hex }}
+          title={hex}
+          aria-label={hex}
+          onClick={() => props.onPick(hex)}
+        />
+      ))}
+      <input type="color" className="stick-color-input" value={props.value} title="Otro color" aria-label="Otro color" onChange={(event) => props.onPick(event.target.value)} />
+    </div>
+  );
+}
+
 function IconPalette({
   items,
   label,
@@ -3585,7 +3919,7 @@ function IconPalette({
             title={`${prefix} ${icon.tip}`}
             onClick={() => onPick(icon.ch)}
           >
-            {icon.ch}
+            {lucideNode(icon.ch) ? <LucideSticker icon={icon.ch} /> : icon.ch}
           </button>
         ))}
       </div>

@@ -133,3 +133,171 @@ input[type="range"], input[type="checkbox"], input[type="radio"] { accent-color:
 .style-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .style-thumb b { display: grid; place-items: center; width: 100%; height: 100%; font-size: 22px; color: var(--muted); border: 1px dashed var(--line); border-radius: 7px; box-sizing: border-box; }
 .style-name { font-size: 11px; color: var(--text); }
+
+/* pestañas de herramientas: solo íconos, con barra gruesa abajo en la activa (como Google Fotos) */
+.editor-side-main .editor-tools {
+  gap: 0;
+  flex-wrap: nowrap;
+  border-bottom: 1px solid #2a2a2a;
+}
+.editor-side-main .editor-tools .btn-ghost {
+  flex: 1 1 0;
+  padding: 10px 0 8px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: #9aa0a6;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -1px;
+}
+.editor-side-main .editor-tools .btn-ghost:hover { color: #e8eaed; background: #ffffff0d; }
+.editor-side-main .editor-tools .btn-ghost.on {
+  color: #8ab4f8;
+  background: none;
+  box-shadow: none;
+  border-bottom: 3px solid #8ab4f8;
+}
+.editor-side-main .editor-tools .btn-ghost svg,
+.editor-side-main .editor-tools .btn-ghost.on svg { opacity: 1; color: inherit; }
+
+/* fila de acciones: Guardar compacto, copia, portapapeles y Restablecer al final */
+.editor-actions .editor-save { flex: 0 1 auto; }
+.editor-actions .editor-save .btn-send { flex: 0 0 auto; width: auto; padding: 8px 14px; }
+.editor-actions .editor-reset { margin-left: auto; }
+.editor-actions .editor-scale-seg { margin-left: auto; flex: none; }
+.editor-actions .editor-scale-seg + .editor-reset { margin-left: 0; }
+
+/* leyenda de tamaño compacta, sobre los botones; Restablecer resaltado en ámbar (acción que descarta cambios) */
+.editor-scale-row { margin: 0 0 6px; }
+.editor-actions .editor-reset {
+  width: 34px;
+  height: 34px;
+  color: #f2b84b;
+  border-color: #f2b84b66;
+  background: #f2b84b14;
+}
+.editor-actions .editor-reset:hover:not(:disabled) { color: #ffd27a; border-color: #f2b84b; background: #f2b84b2b; }
+
+/* leyenda de tamaño en la misma fila, entre los íconos y la escala */
+.editor-actions .editor-save-size {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-left: 6px;
+  font-size: 11px;
+  line-height: 1.25;
+  color: var(--muted, #9aa0a6);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.editor-actions .editor-scale-seg { margin-left: 0; }
+
+/* eliminar: mismo color en todas partes (papelera del visor y de la barra, quitar piezas del editor) */
+.del,
+.viewer-bar .icon-btn.del,
+.seg button.del,
+.editor-side-main .btn-ghost.del {
+  color: var(--danger);
+}
+.del:hover:not(:disabled),
+.viewer-bar .icon-btn.del:hover:not(:disabled),
+.seg button.del:hover:not(:disabled),
+.editor-side-main .btn-ghost.del:hover:not(:disabled) {
+  color: #fff;
+  background: var(--danger);
+  border-color: var(--danger);
+}
+.del:disabled { opacity: 0.4; }
+
+/* carpetas en la vista de archivos: el ícono crece con el tamaño de las miniaturas */
+.thumb.folder svg {
+  height: 64%;
+  width: auto;
+  aspect-ratio: 1;
+}
+
+/* resumen de lo que hay dentro de cada carpeta */
+.folder-info {
+  display: block;
+  font-size: 10.5px;
+  color: var(--muted, #9aa0a6);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.thumb.folder.no-items svg { opacity: 0.4; }
+
+/* otros archivos (ni foto ni video) */
+.thumb.file { color: var(--muted, #9aa0a6); }
+.preview-file { display: grid; place-items: center; color: var(--muted, #9aa0a6); }
+
+/* ruta: recuadros con borde derecho en punta de flecha, en la misma línea que los botones */
+.main-head .crumbs {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+.crumb-more { position: relative; flex: none; }
+.crumb {
+  --tip: 10px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 calc(var(--tip) + 6px) 0 calc(var(--tip) + 8px);
+  margin-left: calc(2px - var(--tip));
+  border: 0;
+  background: #1d1d1d;
+  color: var(--text, #e8eaed);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  clip-path: polygon(0 0, calc(100% - var(--tip)) 0, 100% 50%, calc(100% - var(--tip)) 100%, 0 100%, var(--tip) 50%);
+}
+.crumb.first {
+  margin-left: 0;
+  padding-left: 10px;
+  border-radius: 6px 0 0 6px;
+  clip-path: polygon(0 0, calc(100% - var(--tip)) 0, 100% 50%, calc(100% - var(--tip)) 100%, 0 100%);
+}
+.crumb:hover:not(:disabled) { background: #2a2a2a; }
+.crumb.current { color: #fff; font-weight: 600; background: #8ab4f82e; cursor: default; opacity: 1; }
+.crumb-menu { position: absolute; top: 32px; left: 0; z-index: 20; min-width: 160px; max-width: 320px; }
+
+/* paleta del pack de íconos: cuadrícula más alta y SVG centrado */
+.editor-wm-icons button svg { display: block; margin: auto; }
+
+/* color y estilo de los íconos */
+.stick-swatches { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+.stick-swatch-label { width: 100%; font-size: 11px; color: var(--muted, #9aa0a6); }
+.stick-color-input { width: 26px; height: 26px; padding: 0; border: 1px solid #444; border-radius: 6px; background: none; cursor: pointer; }
+
+/* foco: interruptor y acciones */
+.focus-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  margin-bottom: 10px;
+  text-align: left;
+  color: var(--text, #e8eaed);
+  background: #171717;
+  border: 1px solid #2f2f2f;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.focus-toggle:hover { background: #202020; }
+.focus-toggle span { display: grid; gap: 1px; min-width: 0; }
+.focus-toggle b { font-size: 13px; font-weight: 600; }
+.focus-toggle small { font-size: 11px; color: var(--muted, #9aa0a6); white-space: normal; line-height: 1.3; }
+.focus-toggle.on { color: #fff; border-color: #8ab4f8; background: #8ab4f81f; }
+.focus-toggle.on svg { color: #8ab4f8; }
+.focus-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.focus-actions .focus-apply { grid-column: 1 / -1; padding: 10px 12px; }

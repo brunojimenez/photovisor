@@ -3,9 +3,14 @@ import { invoke } from "@tauri-apps/api/core";
 export type Entry = {
   name: string;
   path: string;
-  kind: "dir" | "image" | "video";
+  kind: "dir" | "image" | "video" | "file";
   modifiedMs: number;
   size: number;
+  /** Solo carpetas: subcarpetas, fotos/videos y otros archivos que tiene adentro. */
+  dirs?: number;
+  media?: number;
+  others?: number;
+  hidden?: number;
 };
 
 export type FolderView = {
@@ -78,6 +83,10 @@ export function studioInfo() {
 }
 
 /** Abre la foto en el Studio (app hermana, su propia ventana). */
+export function openExternal(path: string) {
+  return invoke<void>("open_external", { path });
+}
+
 export function openInStudio(path: string) {
   return invoke<void>("open_in_studio", { path });
 }

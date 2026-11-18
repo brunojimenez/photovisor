@@ -239,17 +239,21 @@ export function applyPaint(
   fx: PaintFx,
   strength: number,
   colorHex: string,
+  /** Multiplica el radio del difuminado y la celda del pixelado (para fotos grandes). */
+  scale = 1,
 ): PaintBox | null {
   const w = overlay.width;
   const h = overlay.height;
-  const pad = fx === "blur" ? blurRadius(strength) + 1 : fx === "pixel" ? pixelCell(strength) : fx === "heal" ? 40 : 2;
+  const blurR = Math.max(1, Math.round(blurRadius(strength) * scale));
+  const cell = Math.max(2, Math.round(pixelCell(strength) * scale));
+  const pad = fx === "blur" ? blurR + 1 : fx === "pixel" ? cell : fx === "heal" ? 40 : 2;
   const box = maskBBox(mask.data, w, h, pad);
   if (!box || fx === "clone") return null;
   const amt = fx === "heal" ? 1 : Math.max(0.05, Math.min(1, strength / 100));
   const tint = parseHex(colorHex);
   let fxPix: Uint8ClampedArray | null = null;
-  if (fx === "blur") fxPix = blurred(source.data, w, h, box, blurRadius(strength));
-  else if (fx === "pixel") fxPix = pixelated(source.data, w, h, box, pixelCell(strength));
+  if (fx === "blur") fxPix = blurred(source.data, w, h, box, blurR);
+  else if (fx === "pixel") fxPix = pixelated(source.data, w, h, box, cell);
   else if (fx === "heal") fxPix = healed(source.data, w, mask.data, box);
   const od = overlay.data;
   const md = mask.data;

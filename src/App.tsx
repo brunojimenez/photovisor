@@ -1,10 +1,11 @@
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { open } from "@tauri-apps/plugin-dialog";
+import { ask, open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import Editor from "./editor/Editor";
 import {
   deletePermanent,
+  openExternal,
   fileInfo,
   COMPUTER,
   goUp as goUpApi,
@@ -48,8 +49,13 @@ import {
 } from "./format";
 import { STYLE_THUMBS } from "./editor/styleThumbs";
 import { Badge, LABELS, RatingBar } from "./Rating";
+import { Breadcrumb } from "./Breadcrumb";
 import { Tree } from "./Tree";
 import { Viewer } from "./Viewer";
+import {
+  ChevronGlyph, CloseGlyph, CompareGlyph, CopyGlyph, CutGlyph, DownGlyph, FilterGlyph, FitGlyph, FolderGlyph, GridGlyph, LargeGlyph, LinesGlyph,
+  FileGlyph, NameGlyph, PanelGlyph, PasteGlyph, RatioGlyph, SelectTypeGlyph, SizeGlyph, StudioGlyph, TrashGlyph, TypeGlyph, UpGlyph,
+} from "./icons";
 
 const VIEW = {
   list: { cell: 100000, row: 52, gap: 4 },
@@ -74,6 +80,39 @@ const EMPTY_CONFIG: Config = {
   discardEditWithoutAsking: false,
 };
 
+const LAYOUT_KEY = "pv.layout";
+
+type Layout = {
+  sideW: number;
+  previewH: number;
+  foldersOpen: boolean;
+  iconSize: IconSize;
+  folderView: "list" | "grid";
+  previewMode: "fit" | "ratio" | "native";
+  sortKey: SortKey;
+  sortDir: SortDir;
+};
+
+/** Distribución guardada de la última vez (tamaños de paneles, vistas y orden). */
+function readLayout(): Partial<Layout> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? "{}") as Partial<Layout>;
+    const out: Partial<Layout> = {};
+    if (typeof raw.sideW === "number") out.sideW = Math.min(700, Math.max(200, raw.sideW));
+    if (typeof raw.previewH === "number") out.previewH = Math.min(900, Math.max(140, raw.previewH));
+    if (typeof raw.foldersOpen === "boolean") out.foldersOpen = raw.foldersOpen;
+    if (raw.iconSize === "list" || raw.iconSize === "medium" || raw.iconSize === "large") out.iconSize = raw.iconSize;
+    if (raw.folderView === "list" || raw.folderView === "grid") out.folderView = raw.folderView;
+    if (raw.previewMode === "fit" || raw.previewMode === "ratio" || raw.previewMode === "native") out.previewMode = raw.previewMode;
+    if (raw.sortKey === "name" || raw.sortKey === "type" || raw.sortKey === "size") out.sortKey = raw.sortKey;
+    if (raw.sortDir === "asc" || raw.sortDir === "desc") out.sortDir = raw.sortDir;
+    return out;
+  } catch {
+    return {};
+  }
+}
+const SAVED = readLayout();
+
 export default function App() {
   const [config, setConfig] = useState<Config>(EMPTY_CONFIG);
   const [root, setRoot] = useState<string | null>(null);
@@ -86,11 +125,11 @@ export default function App() {
   const [viewer, setViewer] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editBase, setEditBase] = useState("");
-  const [iconSize, setIconSize] = useState<IconSize>("large");
-  const [folderView, setFolderView] = useState<"list" | "grid">("list");
+  const [iconSize, setIconSize] = useState<IconSize>(SAVED.iconSize ?? "large");
+  const [folderView, setFolderView] = useState<"list" | "grid">(SAVED.folderView ?? "list");
   const [drives, setDrives] = useState<Entry[]>([]);
   const [quick, setQuick] = useState<Entry[]>([]);
-  const [foldersOpen, setFoldersOpen] = useState(true);
+  const [foldersOpen, setFoldersOpen] = useState(SAVED.foldersOpen ?? true);
   const [editorDirty, setEditorDirty] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [forgetDiscard, setForgetDiscard] = useState(false);
@@ -107,8 +146,8 @@ export default function App() {
   const trail = useRef<string[]>([]);
   const trailAt = useRef(-1);
   const [trailMark, setTrailMark] = useState({ at: -1, len: 0 });
-  const [sideW, setSideW] = useState(292);
-  const [previewH, setPreviewH] = useState(300);
+  const [sideW, setSideW] = useState(SAVED.sideW ?? 292);
+  const [previewH, setPreviewH] = useState(SAVED.previewH ?? 300);
   const [previewOpen, setPreviewOpen] = useState(() => {
     try {
       return localStorage.getItem("pv.preview") !== "0";
@@ -125,12 +164,20 @@ export default function App() {
       }
       return !v;
     });
-  const [previewMode, setPreviewMode] = useState<"fit" | "ratio" | "native">("fit");
+  const [previewMode, setPreviewMode] = useState<"fit" | "ratio" | "native">(SAVED.previewMode ?? "fit");
   const [renaming, setRenaming] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const renamingRef = useRef<string | null>(null);
-  const [sortKey, setSortKey] = useState<SortKey>("name");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [sortKey, setSortKey] = useState<SortKey>(SAVED.sortKey ?? "name");
+  const [sortDir, setSortDir] = useState<SortDir>(SAVED.sortDir ?? "asc");
+  useEffect(() => {
+    const layout: Layout = { sideW, previewH, foldersOpen, iconSize, folderView, previewMode, sortKey, sortDir };
+    try {
+      localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
+    } catch {
+      /* sin almacenamiento: se pierde solo la distribución */
+    }
+  }, [sideW, previewH, foldersOpen, iconSize, folderView, previewMode, sortKey, sortDir]);
   const [info, setInfo] = useState<FileInfo | null>(null);
   const [columns, setColumns] = useState(4);
   const [zoom, setZoom] = useState(1);
@@ -224,7 +271,7 @@ export default function App() {
 
   function showMedia(entries: Entry[], wanted: string | null) {
     setFiles(entries);
-    const hit = entries.find((entry) => entry.path === wanted) ?? entries.find((entry) => entry.kind !== "dir") ?? entries[0] ?? null;
+    const hit = entries.find((entry) => entry.path === wanted) ?? entries.find(isMedia) ?? entries[0] ?? null;
     setFocus(hit?.path ?? null);
     setSelected(hit ? [hit.path] : []);
     anchor.current = hit ? entries.findIndex((entry) => entry.path === hit.path) : 0;
@@ -311,7 +358,7 @@ export default function App() {
         setRoot(view.path);
         setCurrent(view.path);
         setChildren({ [view.path]: view.entries.filter((entry) => entry.kind === "dir") });
-        const firstPhoto = view.entries.find((entry) => entry.kind !== "dir");
+        const firstPhoto = view.entries.find(isMedia);
         setFiles(view.entries);
         setFocus(view.focus ?? firstPhoto?.path ?? view.entries[0]?.path ?? null);
         setSelected(view.focus ? [view.focus] : firstPhoto ? [firstPhoto.path] : view.entries[0] ? [view.entries[0].path] : []);
@@ -460,7 +507,7 @@ export default function App() {
     const media = sortEntries(files.filter((entry) => entry.kind !== "dir" && keep(entry)), sortKey, sortDir);
     return [...dirs, ...media];
   }, [files, sortKey, sortDir, meta, filterRating, filterLabel]);
-  const photos = useMemo(() => shown.filter((entry) => entry.kind !== "dir"), [shown]);
+  const photos = useMemo(() => shown.filter(isMedia), [shown]);
   const metrics = VIEW[iconSize];
 
   useEffect(() => {
@@ -586,8 +633,35 @@ export default function App() {
     }
   }
 
+  /** Doble clic / Enter: carpeta → entra; foto o video → visor; otro archivo → programa de Windows. */
+  function openEntry(entry: Entry) {
+    if (entry.kind === "dir") {
+      void openInTree(entry.path);
+      return;
+    }
+    if (entry.kind === "file") {
+      openExternal(entry.path).catch((error) => setToast(String(error)));
+      return;
+    }
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setViewer(true);
+  }
+
   async function remove(permanent: boolean, paths: string[]) {
-    if (paths.length === 0 || busy || !current) return;
+    if (paths.length === 0 || busy || !current || current === COMPUTER) return;
+    // Una carpeta puede tener cosas que no se ven (otros archivos, subcarpetas): avisar antes de mandarla a la papelera.
+    const full = files.filter((entry) => paths.includes(entry.path) && entry.kind === "dir" && folderCount(entry) > 0);
+    if (full.length > 0) {
+      const detail = full.map((entry) => `• ${entry.name}: ${folderSummary(entry)}`).join("\n");
+      const yes = await ask(`Estas carpetas tienen contenido:\n\n${detail}\n\n¿Las envío igual a la papelera?`, {
+        title: "Eliminar carpeta con contenido",
+        kind: "warning",
+        okLabel: "Enviar a la papelera",
+        cancelLabel: "Cancelar",
+      });
+      if (!yes) return;
+    }
     const index = shown.findIndex((entry) => entry.path === paths[0]);
     setBusy(true);
     try {
@@ -771,13 +845,7 @@ export default function App() {
       }
       if (event.key === "Enter" && focus) {
         const entry = shown.find((item) => item.path === focus);
-        if (entry?.kind === "dir") {
-          void openInTree(entry.path);
-          return;
-        }
-        setZoom(1);
-        setPan({ x: 0, y: 0 });
-        setViewer(true);
+        if (entry) openEntry(entry);
       }
       if ((event.key === "e" || event.key === "E") && !event.ctrlKey && !event.altKey) {
         const entry = shown.find((item) => item.path === focus);
@@ -1002,7 +1070,7 @@ export default function App() {
   async function openInTree(path: string, record = true) {
     if (path === COMPUTER) {
       setCurrent(COMPUTER);
-      setFiles([]);
+      setFiles(drives);
       setFocus(null);
       setSelected([]);
       setExpanded((prev) => new Set(prev).add(COMPUTER));
@@ -1189,6 +1257,10 @@ export default function App() {
             title={focused ? "Doble clic para ver" : undefined}
             onDoubleClick={() => {
               if (!focused) return;
+              if (!isMedia(focused)) {
+                openEntry(focused);
+                return;
+              }
               setZoom(1);
               setPan({ x: 0, y: 0 });
               setViewer(true);
@@ -1209,11 +1281,17 @@ export default function App() {
             ) : focused?.kind === "video" ? (
               <video src={mediaUrl(focused.path, focused.modifiedMs)} controls muted />
             ) : (
+              focused?.kind === "file" ? (
+              <span className="preview-file">
+                <FileGlyph name={focused.name} size={56} />
+              </span>
+            ) : (
               <span>{focused?.kind === "dir" ? "Carpeta" : "Sin selección"}</span>
+            )
             )}
           </div>
           {focused && <PreviewText entry={focused} info={info} />}
-          {focused && focused.kind !== "dir" && (
+          {focused && isMedia(focused) && (
             <RatingBar meta={meta[focused.path]} onRate={(rating) => void applyMeta({ rating })} onLabel={(label) => void applyMeta({ label })} />
           )}
         </div>
@@ -1240,6 +1318,7 @@ export default function App() {
         {root && (
           <>
             <div className="main-head">
+              <Breadcrumb path={current} onGo={(path) => void openInTree(path)} />
               <div className="head-tools">
                 <div className="seg" role="group" aria-label="Tamaño de iconos">
                   <button className={iconSize === "list" ? "on" : ""} title="Iconos en lista" aria-label="Iconos en lista" onClick={() => setIconSize("list")}><LinesGlyph /></button>
@@ -1252,7 +1331,7 @@ export default function App() {
                   <button title="Pegar (Ctrl+V)" aria-label="Pegar" disabled={!clip} onClick={() => void doPaste()}><PasteGlyph /></button>
                 </div>
                 <div className="seg" role="group" aria-label="Eliminar">
-                  <button title="Enviar a la papelera (Supr)" aria-label="Eliminar" disabled={busy || !current || current === COMPUTER || targets().length === 0} onClick={() => void remove(false, targets())}><TrashGlyph /></button>
+                  <button className="del" title="Enviar a la papelera (Supr)" aria-label="Eliminar" disabled={busy || !current || current === COMPUTER || targets().length === 0} onClick={() => void remove(false, targets())}><TrashGlyph /></button>
                 </div>
                 <div className="seg" role="group" aria-label="Selección">
                   <button title="Comparar dos fotos" aria-label="Comparar" onClick={openCompare}><CompareGlyph /></button>
@@ -1377,13 +1456,7 @@ export default function App() {
                     setSelected([entry.path]);
                     setFocus(entry.path);
                     anchor.current = index;
-                    if (entry.kind === "dir") {
-                      void openInTree(entry.path);
-                      return;
-                    }
-                    setZoom(1);
-                    setPan({ x: 0, y: 0 });
-                    setViewer(true);
+                    openEntry(entry);
                   }}
               />
             )}
@@ -1393,14 +1466,14 @@ export default function App() {
                   ? "Trabajando…"
                   : selected.length > 1
                     ? `${selected.length} seleccionados`
-                    : `${shown.filter((entry) => entry.kind === "dir").length} carpetas · ${photos.length} archivos`}
+                    : `${shown.filter((entry) => entry.kind === "dir").length} carpetas · ${shown.filter((entry) => entry.kind !== "dir").length} archivos`}
               </span>
               <span>Ctrl+A marca todo · Supr borra lo marcado · Ctrl+clic suma · Mayús+clic un rango</span>
             </div>
           </>
         )}
       </main>
-      {viewer && focused && focused.kind !== "dir" && (
+      {viewer && focused && isMedia(focused) && (
         <Viewer
           file={focused}
           files={photos}
@@ -1419,6 +1492,8 @@ export default function App() {
           }}
           onToggleFilmstrip={() => void setFilmstrip(!config.filmstrip)}
           onEdit={openEditor}
+          onDelete={() => void remove(false, [focused.path])}
+          busy={busy}
           onStudio={studioHere ? () => void openInStudio() : undefined}
           canEdit={focused.kind === "image"}
           playing={playing}
@@ -1682,7 +1757,13 @@ function Grid(props: {
                   onDoubleClick={() => props.onOpen(index)}
                 >
                   {entry.kind === "dir" ? (
-                    <div className="thumb folder"><FolderGlyph /></div>
+                    <div className={`thumb folder${folderCount(entry) === 0 ? " no-items" : ""}`} title={folderSummary(entry)}>
+                      <FolderGlyph />
+                    </div>
+                  ) : entry.kind === "file" ? (
+                    <div className="thumb file" title={entry.name}>
+                      <FileGlyph name={entry.name} size={props.iconSize === "list" ? 22 : 48} />
+                    </div>
                   ) : (
                     <Thumb entry={entry} edge={props.edge} src={src} requestThumb={props.requestThumb} tick={props.thumbRev} />
                   )}
@@ -1712,10 +1793,13 @@ function Grid(props: {
                       {entry.name}
                     </b>
                   )}
+                  {entry.kind === "dir" && props.iconSize !== "list" && !editingName && <small className="folder-info">{folderSummary(entry)}</small>}
                   <Badge meta={props.meta[entry.path]} />
                   {props.iconSize === "list" && !editingName && (
                     <>
-                      <em>{entry.kind === "dir" ? "Carpeta" : fileExt(entry.name) || entry.kind}</em>
+                      <em title={entry.kind === "dir" ? folderSummary(entry) : undefined}>
+                        {entry.kind === "dir" ? folderSummary(entry) : fileExt(entry.name) || entry.kind}
+                      </em>
                       <em>{formatSize(entry.size)}</em>
                     </>
                   )}
@@ -1729,201 +1813,31 @@ function Grid(props: {
   );
 }
 
-function ChevronGlyph(props: { dir: "left" | "right" }) {
-  const d = props.dir === "left" ? "M10 3.2 5.2 8 10 12.8" : "M6 3.2 10.8 8 6 12.8";
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path d={d} fill="none" stroke="currentColor" strokeWidth="1.5" />
-    </svg>
-  );
+const isMedia = (entry: Entry) => entry.kind === "image" || entry.kind === "video";
+
+/** Los discos de «Este equipo» no traen conteo: se muestran normales, no como carpetas vacías. */
+const isDrive = (entry: Entry) => /^[A-Za-z]:.?$/.test(entry.path);
+
+function folderCount(entry: Entry) {
+  if (isDrive(entry)) return 1;
+  return (entry.dirs ?? 0) + (entry.media ?? 0) + (entry.others ?? 0) + (entry.hidden ?? 0);
 }
 
-function CopyGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <rect x="5" y="5" width="8" height="8" rx="1" fill="none" stroke="currentColor" strokeWidth="1.3" />
-      <path d="M3.5 10.5V3.5h7" fill="none" stroke="currentColor" strokeWidth="1.3" />
-    </svg>
-  );
-}
-
-function CutGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <circle cx="4" cy="11.5" r="1.6" fill="none" stroke="currentColor" strokeWidth="1.3" />
-      <circle cx="4" cy="4.5" r="1.6" fill="none" stroke="currentColor" strokeWidth="1.3" />
-      <path d="M5.4 5.6 13 12M5.4 10.4 13 4" fill="none" stroke="currentColor" strokeWidth="1.3" />
-    </svg>
-  );
-}
-
-function PasteGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M6 2.5h4v2H6z" fill="none" stroke="currentColor" strokeWidth="1.3" />
-      <rect x="3.5" y="4" width="9" height="9.5" rx="1" fill="none" stroke="currentColor" strokeWidth="1.3" />
-    </svg>
-  );
-}
-
-function TrashGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M3.2 4.2h9.6M6.2 4.2V2.8h3.6v1.4M4.4 4.2l.6 9h5.9l.6-9" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function CompareGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <rect x="1.5" y="3" width="6" height="10" rx="1" fill="none" stroke="currentColor" strokeWidth="1.3" />
-      <rect x="8.5" y="3" width="6" height="10" rx="1" fill="none" stroke="currentColor" strokeWidth="1.3" />
-    </svg>
-  );
-}
-
-function CloseGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M4 4l8 8M12 4 4 12" fill="none" stroke="currentColor" strokeWidth="1.4" />
-    </svg>
-  );
-}
-
-function PanelGlyph(props: { open?: boolean }) {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <rect x="1.5" y="2.5" width="13" height="11" rx="1.2" fill="none" stroke="currentColor" strokeWidth="1.3" />
-      <path d={props.open ? "M6 3v10" : "M5 3v10"} fill="none" stroke="currentColor" strokeWidth="1.3" />
-    </svg>
-  );
-}
-
-function UpGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M8 3.2 3.4 8.2M8 3.2l4.6 5M8 3.5V13" fill="none" stroke="currentColor" strokeWidth="1.4" />
-    </svg>
-  );
-}
-
-function DownGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M8 12.8 3.4 7.8M8 12.8l4.6-5M8 12.5V3" fill="none" stroke="currentColor" strokeWidth="1.4" />
-    </svg>
-  );
-}
-
-function LinesGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M3 4.5h10M3 8h10M3 11.5h10" fill="none" stroke="currentColor" strokeWidth="1.4" />
-    </svg>
-  );
-}
-
-function GridGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <rect x="2.5" y="2.5" width="4.2" height="4.2" rx="0.6" fill="currentColor" />
-      <rect x="9.3" y="2.5" width="4.2" height="4.2" rx="0.6" fill="currentColor" />
-      <rect x="2.5" y="9.3" width="4.2" height="4.2" rx="0.6" fill="currentColor" />
-      <rect x="9.3" y="9.3" width="4.2" height="4.2" rx="0.6" fill="currentColor" />
-    </svg>
-  );
-}
-
-function LargeGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <rect x="2.2" y="2.2" width="11.6" height="11.6" rx="1.2" fill="currentColor" />
-    </svg>
-  );
-}
-
-function NameGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <text x="8" y="11.5" textAnchor="middle" fontSize="8" fill="currentColor" fontFamily="Segoe UI, sans-serif">Az</text>
-    </svg>
-  );
-}
-
-function TypeGlyph() {
-  return (
-    <svg width="18" height="16" viewBox="0 0 18 16" aria-hidden="true">
-      <text x="9" y="12" textAnchor="middle" fontSize="10" fontWeight="600" fill="currentColor" fontFamily="Segoe UI, sans-serif">.ext</text>
-    </svg>
-  );
-}
-
-function StudioGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M2.5 3.5h11v7.2H7.2L4.4 13v-2.3H2.5z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-      <path d="M8 4.9l.55 1.45L10 6.9l-1.45.55L8 8.9l-.55-1.45L6 6.9l1.45-.55z" fill="currentColor" />
-    </svg>
-  );
-}
-
-function FilterGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M2.5 3.5h11L9.4 8.4V13l-2.8-1.4V8.4z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function SelectTypeGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M4 2.5h5l3 3V13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" strokeWidth="1.3" />
-      <path d="M5.8 9l1.7 1.7L10.4 7.6" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function SizeGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M3 12.5h10M3 8.5h7M3 4.5h4" fill="none" stroke="currentColor" strokeWidth="1.6" />
-    </svg>
-  );
-}
-
-function FitGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path fill="none" stroke="currentColor" strokeWidth="1.4" d="M6 2H2v4M10 2h4v4M14 10v4h-4M2 10v4h4" />
-    </svg>
-  );
-}
-
-function RatioGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <rect x="1.5" y="3.5" width="13" height="9" fill="none" stroke="currentColor" strokeWidth="1.4" rx="1" />
-    </svg>
-  );
+/** «3 carpetas · 12 fotos · 2 otros» (lo que no es foto ni video no se ve en la vista, pero cuenta). */
+function folderSummary(entry: Entry) {
+  if (isDrive(entry)) return "Disco";
+  const parts: string[] = [];
+  if (entry.dirs) parts.push(`${entry.dirs} ${entry.dirs === 1 ? "carpeta" : "carpetas"}`);
+  if (entry.media) parts.push(`${entry.media} ${entry.media === 1 ? "foto o video" : "fotos y videos"}`);
+  if (entry.hidden) parts.push(`${entry.hidden} ${entry.hidden === 1 ? "oculto" : "ocultos"}`);
+  if (entry.others) parts.push(`${entry.others} ${entry.others === 1 ? "otro archivo" : "otros archivos"}`);
+  return parts.length > 0 ? parts.join(" · ") : "Vacía";
 }
 
 function NativeGlyph() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
       <text x="8" y="11" textAnchor="middle" fontSize="7.5" fill="currentColor" fontFamily="Segoe UI, sans-serif">1:1</text>
-    </svg>
-  );
-}
-
-function FolderGlyph() {
-  return (
-    <svg width="22" height="18" viewBox="0 0 22 18" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M2 3.5A1.5 1.5 0 0 1 3.5 2h4.2c.4 0 .8.16 1.06.44L10 4h8.5A1.5 1.5 0 0 1 20 5.5v9A1.5 1.5 0 0 1 18.5 16h-15A1.5 1.5 0 0 1 2 14.5v-11Z"
-      />
     </svg>
   );
 }

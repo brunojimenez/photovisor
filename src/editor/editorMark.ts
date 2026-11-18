@@ -1,4 +1,5 @@
 /** Marca de agua en canvas: texto con íconos, repetido en diagonal, o una imagen. */
+import { drawLucide, lucideNode } from "./lucideStickers";
 
 export type WmMode = "text" | "image";
 export type WmPlace = "tile" | "center" | "tl" | "tr" | "bl" | "br";
@@ -105,6 +106,9 @@ export type Piece = {
   text: string;
   font: string;
   color: string;
+  /** Solo íconos de trazo: liso, degradado (color → color2) o arcoíris. */
+  look?: "solid" | "gradient" | "rainbow";
+  color2?: string;
 };
 
 export type WmFrame = { x: number; y: number; w: number; h: number };
@@ -606,6 +610,22 @@ export function drawWatermark(
   ctx.restore();
 }
 
+export const RAINBOW_STOPS = ["#ff3b30", "#ff9500", "#ffd60a", "#34c759", "#0a84ff", "#af52de"];
+
+/** Tinta de un ícono: color liso, degradado o arcoíris en diagonal sobre su caja. */
+function pieceInk(ctx: CanvasRenderingContext2D, piece: Piece, base: string) {
+  return (x0: number, y0: number, x1: number, y1: number): string | CanvasGradient => {
+    if (piece.look !== "gradient" && piece.look !== "rainbow") return base;
+    const g = ctx.createLinearGradient(x0, y0, x1, y1);
+    if (piece.look === "rainbow") RAINBOW_STOPS.forEach((c, i) => g.addColorStop(i / (RAINBOW_STOPS.length - 1), c));
+    else {
+      g.addColorStop(0, base);
+      g.addColorStop(1, /^#[0-9a-fA-F]{6}$/.test(piece.color2 ?? "") ? (piece.color2 as string) : base);
+    }
+    return g;
+  };
+}
+
 export function drawPieces(ctx: CanvasRenderingContext2D, pieces: Piece[], guideId = 0) {
   for (const piece of pieces) {
     ctx.save();
@@ -626,10 +646,11 @@ export function drawPieces(ctx: CanvasRenderingContext2D, pieces: Piece[], guide
       }
     } else {
       const key = colorKey(piece.icon);
-      if (key) drawColorIcon(ctx, key, piece.x - piece.size / 2, piece.y - piece.size / 2, piece.size);
+      if (lucideNode(piece.icon)) drawLucide(ctx, piece.icon, piece.x, piece.y, piece.size, pieceInk(ctx, piece, ink));
+      else if (key) drawColorIcon(ctx, key, piece.x - piece.size / 2, piece.y - piece.size / 2, piece.size);
       else {
         ctx.font = textFont(piece.size);
-        ctx.fillStyle = ink;
+        ctx.fillStyle = pieceInk(ctx, piece, ink)(piece.x - piece.size / 2, piece.y - piece.size / 2, piece.x + piece.size / 2, piece.y + piece.size / 2);
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText(plainGlyph(piece.icon), piece.x, piece.y);

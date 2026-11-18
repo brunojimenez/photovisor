@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { COMPUTER, type Entry } from "./api";
 import { folderName } from "./format";
+import { DriveGlyph, FavGlyph, FolderMini, PcGlyph } from "./icons";
 
 type Props = {
   drives: Entry[];
@@ -39,7 +40,7 @@ export function Tree(props: Props) {
               {quickOpen ? "▾" : "▸"}
             </button>
             <button className="node-main" onClick={toggleQuick}>
-              <StarGlyph />
+              <FavGlyph />
               <span>Acceso rápido</span>
             </button>
           </div>
@@ -85,36 +86,3 @@ function Node(props: Props & { path: string; depth: number; label?: string; driv
   );
 }
 
-function PcGlyph() {
-  return (
-    <svg className="node-ico pc" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <rect x="2" y="2.5" width="12" height="8" rx="1" fill="none" stroke="currentColor" strokeWidth="1.3" />
-      <path d="M6 13.5h4M8 10.5v3" fill="none" stroke="currentColor" strokeWidth="1.3" />
-    </svg>
-  );
-}
-
-function StarGlyph() {
-  return (
-    <svg className="node-ico pc" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M8 2l1.8 3.7 4 .6-2.9 2.8.7 4L8 11.2 4.4 13.1l.7-4L2.2 6.3l4-.6L8 2Z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function DriveGlyph() {
-  return (
-    <svg className="node-ico drive" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path fill="currentColor" d="M2 5.2 3.2 3h9.6L14 5.2V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5.2Z" />
-      <path d="M3 8.5h10" stroke="#111" strokeWidth="1" />
-    </svg>
-  );
-}
-
-function FolderMini() {
-  return (
-    <svg className="node-ico folder" width="16" height="14" viewBox="0 0 16 14" aria-hidden="true">
-      <path fill="currentColor" d="M1.2 2.4A1.2 1.2 0 0 1 2.4 1.2h3.2c.3 0 .6.12.8.34L7.2 2.6h6.4a1.2 1.2 0 0 1 1.2 1.2v7.6a1.2 1.2 0 0 1-1.2 1.2H2.4a1.2 1.2 0 0 1-1.2-1.2V2.4Z" />
-    </svg>
-  );
-}
