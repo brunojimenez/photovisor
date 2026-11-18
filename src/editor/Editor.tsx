@@ -2,12 +2,15 @@ import { useEffect, useId, useRef, useState } from "react";
 import {
   ArrowLeft, Bandage, Focus, Brush, ClipboardCopy, Crop, Download, Eraser, Eye, FlipHorizontal2, FlipVertical2, Maximize, MoveHorizontal,
   MoveVertical, Paintbrush, Palette, Pencil, Pipette, Replace, RotateCcw, RotateCcwSquare, RotateCwSquare, Save, SaveAll, Scaling,
-  SlidersHorizontal, Smile, Square, Stamp, Type, WandSparkles, Wrench, type LucideIcon,
+  SlidersHorizontal, Smile, Square, Stamp, Type, Aperture, Check, OctagonX, Redo2, Undo2, Rows3, UserRound, WandSparkles, Wrench, type LucideIcon,
 } from "lucide-react";
 import { ADJUST_ZERO, HSL_BANDS, STYLE_KINDS, applyAdjust, adjustIdle, type Adjust, type Band, type HslKey } from "./editorAdjust";
 import { PRESETS, presetAdjust } from "./editorPresets";
 import { LUCIDE_STICKERS, lucideNode } from "./lucideStickers";
 import { FLUENT_CATS } from "./fluentList";
+
+/** Emoji del pack -> el carácter Unicode que se escribe en una frase. */
+const FLUENT_CHR = new Map(FLUENT_CATS.flatMap((c) => c.items.map((i) => [i.id, i.chr] as const)));
 import { WM_DEFAULT, drawPieces, drawWatermark, fluentSvgUrl, installedFonts, onFluentReady, PALETTES, paletteStops, watermarkIdle, wmFont, type Piece, type Watermark } from "./editorMark";
 import { applyPaint, cloneCanvas, eraseOverlay, type PaintFx } from "./editorPaint";
 
@@ -314,6 +317,8 @@ function upscaleMotor(tiled: boolean, faceFix: boolean) {
   return "UltraSharp";
 }
 
+type FocusShape = { x: number; y: number; rx: number; ry: number; el: boolean };
+
 export default function Editor({
   src,
   onCancel,
@@ -403,15 +408,32 @@ export default function Editor({
   const beforeRef = useRef<HTMLCanvasElement | null>(null);
   const stroking = useRef(false);
   // Foco: círculos que quedan nítidos; el efecto (difuminar, pixelar, color) va afuera (o adentro) con borde difuso
-  const focusCircles = useRef<{ x: number; y: number; r: number }[]>([]);
-  const focusDrag = useRef<{ x: number; y: number; r: number } | null>(null);
+  const focusCircles = useRef<FocusShape[]>([]);
+  const focusDrag = useRef<(FocusShape & { sx: number; sy: number }) | null>(null);
+  const focusEdit = useRef<{ idx: number; mode: "move" | "resize"; axis: "x" | "y" | "both"; dx: number; dy: number } | null>(null);
+  const focusElRef = useRef(false);
+  const focusKeysRef = useRef<{ clear: () => void; apply: () => void }>({ clear() {}, apply() {} });
+  const [focusEl, setFocusEl] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("editor.focus") || "{}").el === true;
+    } catch {
+      return false;
+    }
+  });
   const focusOnRef = useRef(false);
   const brushMaxRef = useRef(220);
   const focusSoftRef = useRef(45);
   const focusInsideRef = useRef(false);
   const [focusOn, setFocusOn] = useState(false);
-  const [focusSoft, setFocusSoft] = useState(45);
-  const [focusInside, setFocusInside] = useState(false);
+  const savedFocus = (() => {
+    try {
+      return JSON.parse(localStorage.getItem("editor.focus") || "{}") as { soft?: number; inside?: boolean; el?: boolean };
+    } catch {
+      return {};
+    }
+  })();
+  const [focusSoft, setFocusSoft] = useState(() => (typeof savedFocus.soft === "number" ? savedFocus.soft : 45));
+  const [focusInside, setFocusInside] = useState(() => savedFocus.inside === true);
   const [focusN, setFocusN] = useState(0);
   const focusKRef = useRef(1);
   const [focusK, setFocusK] = useState(1);
@@ -578,6 +600,7 @@ export default function Editor({
   focusOnRef.current = focusOn && (paintFx === "blur" || paintFx === "pixel" || paintFx === "color");
   focusSoftRef.current = focusSoft;
   focusInsideRef.current = focusInside;
+  focusElRef.current = focusEl;
   const brushMax = Math.max(220, Math.min(3000, Math.round(Math.max(work().w, work().h) * 0.5)));
   brushMaxRef.current = brushMax;
   paintStrengthRef.current = paintStrength;
@@ -738,15 +761,20 @@ export default function Editor({
     const list = focusDrag.current ? [...focusCircles.current, focusDrag.current] : focusCircles.current;
     const soft = focusSoftRef.current / 100;
     for (const c of list) {
-      const r = Math.max(2, c.r * focusKRef.current);
-      const inner = Math.min(r - 0.5, r * (1 - soft));
-      const g = ctx.createRadialGradient(c.x, c.y, Math.max(0, inner), c.x, c.y, r);
+      const rx = Math.max(2, c.rx * focusKRef.current);
+      const ry = Math.max(2, c.ry * focusKRef.current);
+      const inner = Math.max(0, Math.min(0.98, 1 - soft));
+      ctx.save();
+      ctx.translate(c.x, c.y);
+      ctx.scale(rx, ry);
+      const g = ctx.createRadialGradient(0, 0, inner, 0, 0, 1);
       g.addColorStop(0, "rgba(255,255,255,1)");
       g.addColorStop(1, "rgba(255,255,255,0)");
       ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+      ctx.arc(0, 0, 1, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
     }
     stroking.current = list.length > 0;
     setPaintTick((n) => n + 1);
@@ -768,6 +796,7 @@ export default function Editor({
     const had = focusCircles.current.length > 0 || focusDrag.current !== null;
     focusCircles.current = [];
     focusDrag.current = null;
+    focusEdit.current = null;
     focusKRef.current = 1;
     setFocusK(1);
     setFocusN(0);
@@ -784,7 +813,15 @@ export default function Editor({
     focusDrag.current = null;
     const { w, h } = work();
     const k = focusKRef.current;
-    focusCircles.current.push({ x: d.x, y: d.y, r: d.r * k < 8 ? (Math.min(w, h) * 0.25) / k : d.r });
+    const tiny = d.rx * k < 8 && d.ry * k < 8;
+    const base = (Math.min(w, h) * 0.25) / k;
+    focusCircles.current.push({
+      x: d.x,
+      y: d.y,
+      rx: tiny ? base : Math.max(d.rx, 4 / k),
+      ry: tiny ? (d.el ? base * 0.7 : base) : Math.max(d.ry, 4 / k),
+      el: d.el,
+    });
     setFocusN(focusCircles.current.length);
     drawFocus();
   }
@@ -795,9 +832,26 @@ export default function Editor({
     focusDrag.current = null;
     focusKRef.current = 1;
     setFocusK(1);
-    focusCircles.current = [{ x: w / 2, y: h / 2, r: Math.hypot(w, h) * 0.42 }];
+    focusCircles.current = [{ x: w / 2, y: h / 2, rx: w * 0.55, ry: h * 0.55, el: true }];
     focusSoftRef.current = 70;
     setFocusSoft(70);
+    setFocusN(1);
+    drawFocus();
+  }
+
+  /** Zona lista: retrato (elipse vertical al centro) o banda horizontal estilo miniatura (tilt-shift). */
+  function focusPreset(kind: "portrait" | "band") {
+    const { w, h } = work();
+    focusDrag.current = null;
+    focusKRef.current = 1;
+    setFocusK(1);
+    const soft = kind === "portrait" ? 55 : 70;
+    focusCircles.current =
+      kind === "portrait"
+        ? [{ x: w / 2, y: h * 0.45, rx: w * 0.3, ry: h * 0.42, el: true }]
+        : [{ x: w / 2, y: h / 2, rx: w * 0.75, ry: h * 0.17, el: true }];
+    focusSoftRef.current = soft;
+    setFocusSoft(soft);
     setFocusN(1);
     drawFocus();
   }
@@ -806,6 +860,62 @@ export default function Editor({
     focusSoftRef.current = v;
     setFocusSoft(v);
     if (focusCircles.current.length) drawFocus();
+  }
+
+  function changeFocusEl(v: boolean) {
+    focusElRef.current = v;
+    setFocusEl(v);
+  }
+
+  /** Busca la forma bajo el puntero: el borde (redimensionar) o el interior (mover). Lo último dibujado gana. */
+  function focusHit(p: { x: number; y: number }) {
+    const kd = Math.max(0.05, viewRef.current.scale);
+    const K = focusKRef.current;
+    for (let i = focusCircles.current.length - 1; i >= 0; i--) {
+      const c = focusCircles.current[i];
+      const rx = Math.max(2, c.rx * K);
+      const ry = Math.max(2, c.ry * K);
+      const nx = (p.x - c.x) / rx;
+      const ny = (p.y - c.y) / ry;
+      const d = Math.hypot(nx, ny);
+      const edgePx = Math.abs(d - 1) * Math.min(rx, ry);
+      if (edgePx < 10 / kd) return { idx: i, mode: "resize" as const, axis: c.el ? (Math.abs(nx) > Math.abs(ny) ? ("x" as const) : ("y" as const)) : ("both" as const) };
+      if (d < 1) return { idx: i, mode: "move" as const, axis: "both" as const };
+    }
+    return null;
+  }
+
+  function focusEditMove(p: { x: number; y: number }) {
+    const ed = focusEdit.current;
+    if (!ed) return;
+    const c = focusCircles.current[ed.idx];
+    if (!c) return;
+    const K = focusKRef.current;
+    if (ed.mode === "move") {
+      c.x = p.x - ed.dx;
+      c.y = p.y - ed.dy;
+    } else if (ed.axis === "x") {
+      c.rx = Math.max(4, Math.abs(p.x - c.x)) / K;
+    } else if (ed.axis === "y") {
+      c.ry = Math.max(4, Math.abs(p.y - c.y)) / K;
+    } else {
+      const nx = (p.x - c.x) / (c.rx * K);
+      const ny = (p.y - c.y) / (c.ry * K);
+      const f = Math.max(0.05, Math.hypot(nx, ny));
+      c.rx = Math.max(4 / K, c.rx * f);
+      c.ry = Math.max(4 / K, c.ry * f);
+    }
+    drawFocus();
+  }
+
+  function focusRemoveAt(p: { x: number; y: number }) {
+    const hit = focusHit(p);
+    if (!hit) return false;
+    focusCircles.current.splice(hit.idx, 1);
+    setFocusN(focusCircles.current.length);
+    if (focusCircles.current.length === 0) clearFocus();
+    else drawFocus();
+    return true;
   }
 
   function changeFocusK(v: number) {
@@ -845,6 +955,16 @@ export default function Editor({
     clearFocus();
     syncUndo();
   }
+
+  focusKeysRef.current = { clear: clearFocus, apply: applyFocus };
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("editor.focus", JSON.stringify({ soft: focusSoft, inside: focusInside, el: focusEl }));
+    } catch {
+      /* sin almacenamiento */
+    }
+  }, [focusSoft, focusInside, focusEl]);
 
   useEffect(() => {
     if (focusCircles.current.length > 0) setPaintTick((n) => n + 1);
@@ -1150,14 +1270,15 @@ export default function Editor({
 
   useEffect(() => onFluentReady(() => setPaintTick((n) => n + 1)), []);
 
-  /** Texto: un carácter de trazo se suma a la frase; un emoji o ícono de líneas se coloca desde la herramienta de íconos. */
+  /** Texto: un emoji o un carácter de trazo se escribe en la frase; un ícono de líneas se coloca desde la herramienta de íconos. */
   function pickNoteIcon(ch: string) {
-    if (ch.startsWith("fe:") || lucideNode(ch)) {
+    if (lucideNode(ch)) {
       setStickIcon(ch);
       setTool("stick");
       return;
     }
-    const text = (noteText + ch).slice(0, 80);
+    const add = ch.startsWith("fe:") ? (FLUENT_CHR.get(ch) ?? "") : ch;
+    const text = (noteText + add).slice(0, 80);
     setNoteText(text);
     if (!pieceFresh.current && pieces.some((p) => p.id === pieceId && p.kind === "text")) {
       snapPieces(`text${pieceId}`);
@@ -1384,20 +1505,21 @@ export default function Editor({
       const list = focusDrag.current ? [...focusCircles.current, focusDrag.current] : focusCircles.current;
       ctx.save();
       for (const c of list) {
-        const r = Math.max(2, c.r * focusKRef.current) * k;
-        const ring = (radius: number, color: string, width: number, dash: number[]) => {
+        const rx0 = Math.max(2, c.rx * focusKRef.current) * k;
+        const ry0 = Math.max(2, c.ry * focusKRef.current) * k;
+        const ring = (f: number, color: string, width: number, dash: number[]) => {
           ctx.beginPath();
-          ctx.arc(c.x * k, c.y * k, radius, 0, Math.PI * 2);
+          ctx.ellipse(c.x * k, c.y * k, Math.max(1, rx0 * f), Math.max(1, ry0 * f), 0, 0, Math.PI * 2);
           ctx.setLineDash(dash);
           ctx.lineWidth = width;
           ctx.strokeStyle = color;
           ctx.stroke();
         };
-        ring(r, "rgba(0,0,0,0.6)", 4, []);
-        ring(r, "#ffffff", 1.75, [8, 6]);
+        ring(1, "rgba(0,0,0,0.6)", 4, []);
+        ring(1, "#ffffff", 1.75, [8, 6]);
         if (soft > 0.05) {
-          ring(r * (1 - soft), "rgba(0,0,0,0.45)", 3, []);
-          ring(r * (1 - soft), "#8ab4f8", 1.25, [3, 4]);
+          ring(1 - soft, "rgba(0,0,0,0.45)", 3, []);
+          ring(1 - soft, "#8ab4f8", 1.25, [3, 4]);
         }
         ctx.setLineDash([]);
         ctx.fillStyle = "#ffffff";
@@ -1621,6 +1743,10 @@ export default function Editor({
     const onKey = (e: KeyboardEvent) => {
       const list = choicesRef.current;
       if (e.key === "Escape") {
+        if (focusCircles.current.length > 0 && !typing(e)) {
+          focusKeysRef.current.clear();
+          return;
+        }
         if (list?.length) {
           onDismissChoices?.();
           return;
@@ -1628,6 +1754,21 @@ export default function Editor({
         if (!busy) onCancel();
       }
       if (typing(e)) return;
+      if (toolRef.current === "paint" && focusCircles.current.length > 0) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          focusKeysRef.current.apply();
+          return;
+        }
+        if (e.key === "Delete" || e.key === "Backspace") {
+          e.preventDefault();
+          focusCircles.current.pop();
+          setFocusN(focusCircles.current.length);
+          if (focusCircles.current.length === 0) focusKeysRef.current.clear();
+          else drawFocus();
+          return;
+        }
+      }
       if (list?.length && (e.key === "1" || e.key === "2" || e.key === "3")) {
         const i = Number(e.key) - 1;
         if (list[i]) {
@@ -1825,7 +1966,13 @@ export default function Editor({
       }
       if (focusOnRef.current) {
         e.currentTarget.setPointerCapture(e.pointerId);
-        focusDrag.current = { x: p.x, y: p.y, r: 0 };
+        const hit = e.shiftKey ? null : focusHit(p);
+        if (hit) {
+          const c = focusCircles.current[hit.idx];
+          focusEdit.current = { ...hit, dx: p.x - c.x, dy: p.y - c.y };
+          return;
+        }
+        focusDrag.current = { x: p.x, y: p.y, rx: 0, ry: 0, el: focusElRef.current, sx: p.x, sy: p.y };
         drawFocus();
         return;
       }
@@ -1907,9 +2054,31 @@ export default function Editor({
       });
       return;
     }
+    if (!(e.buttons & 1)) {
+      const st = e.currentTarget.style;
+      if (toolRef.current === "paint" && focusOnRef.current) {
+        const hit = focusHit(toImage(e.clientX, e.clientY, e.currentTarget));
+        st.cursor = !hit ? "" : hit.mode === "move" ? "move" : hit.axis === "x" ? "ew-resize" : hit.axis === "y" ? "ns-resize" : "nwse-resize";
+      } else if (st.cursor) {
+        st.cursor = "";
+      }
+    }
+    if (toolRef.current === "paint" && (e.buttons & 1) && focusEdit.current) {
+      focusEditMove(toImage(e.clientX, e.clientY, e.currentTarget));
+      return;
+    }
     if (toolRef.current === "paint" && (e.buttons & 1) && focusDrag.current) {
       const p = toImage(e.clientX, e.clientY, e.currentTarget);
-      focusDrag.current.r = Math.hypot(p.x - focusDrag.current.x, p.y - focusDrag.current.y) / focusKRef.current;
+      const d = focusDrag.current;
+      const K = focusKRef.current;
+      if (d.el) {
+        d.x = (d.sx + p.x) / 2;
+        d.y = (d.sy + p.y) / 2;
+        d.rx = Math.abs(p.x - d.sx) / 2 / K;
+        d.ry = Math.abs(p.y - d.sy) / 2 / K;
+      } else {
+        d.rx = d.ry = Math.hypot(p.x - d.x, p.y - d.y) / K;
+      }
       drawFocus();
       return;
     }
@@ -1983,7 +2152,8 @@ export default function Editor({
   }
 
   function onPointerUp() {
-    if (focusDrag.current) finishCircle();
+    if (focusEdit.current) focusEdit.current = null;
+    else if (focusDrag.current) finishCircle();
     else if (stroking.current && !focusOnRef.current) commitStroke();
     lastPaint.current = null;
     panDrag.current = null;
@@ -2245,6 +2415,12 @@ export default function Editor({
             setKeysOpen(false);
             onPointerDown(e);
           }}
+          onContextMenu={(e) => {
+            if (tool === "paint" && focusOnRef.current) {
+              e.preventDefault();
+              focusRemoveAt(toImage(e.clientX, e.clientY, e.currentTarget));
+            }
+          }}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
@@ -2501,6 +2677,7 @@ export default function Editor({
               </div>
               {pending && onCancelJob && (
                 <button type="button" className="btn-ghost" title="Cortar el trabajo en ComfyUI" onClick={onCancelJob}>
+                  <OctagonX size={15} aria-hidden />
                   Cortar
                 </button>
               )}
@@ -2829,7 +3006,7 @@ export default function Editor({
                       <Focus size={18} strokeWidth={1.75} aria-hidden />
                       <span>
                         <b>{focusOn ? "Foco activado" : "Activar foco"}</b>
-                        <small>{focusOn ? "Arrastrá sobre la foto desde el centro hacia afuera" : "Círculos nítidos, efecto en el resto"}</small>
+                        <small>{focusOn ? (focusEl ? "Arrastrá de una esquina a la opuesta" : "Arrastrá desde el centro hacia afuera") : "Zonas nítidas, efecto en el resto"}</small>
                       </span>
                     </button>
                     {focusOn && (
@@ -2842,17 +3019,36 @@ export default function Editor({
                             Efecto adentro
                           </button>
                         </div>
+                        <div className="editor-seg" role="group" aria-label="Forma de la zona">
+                          <button type="button" className={!focusEl ? "on" : ""} onClick={() => changeFocusEl(false)} title="Se arrastra desde el centro hacia afuera">
+                            Círculo
+                          </button>
+                          <button type="button" className={focusEl ? "on" : ""} onClick={() => changeFocusEl(true)} title="Se arrastra de una esquina a la opuesta">
+                            Elipse
+                          </button>
+                        </div>
                         <OptRow label="Tamaño" value={Math.round(focusK * 100)} min={20} max={300} def={100} onChange={changeFocusK} hint="Agranda o achica todos los círculos marcados, antes de aplicar" />
                         <OptRow label="Borde suave" value={focusSoft} min={0} max={100} def={45} onChange={changeFocusSoft} hint="Qué tan gradual es la transición entre la zona nítida y el efecto" />
-                        <p className="hint">Tamaño y borde se pueden ajustar antes de Aplicar. La intensidad es la de arriba. Línea blanca: borde; azul: inicio de la transición.</p>
+                        <p className="hint">Arrastrá una zona para moverla, su borde para cambiarle el tamaño, clic derecho para quitarla. Shift+arrastrar crea una nueva encima. Línea blanca: borde; azul: inicio de la transición.</p>
                         <div className="focus-actions">
                           <button type="button" className="btn-ghost" onClick={focusVignette} title="Centro nítido y bordes con el efecto">
+                            <Aperture size={15} aria-hidden />
                             Viñeta
                           </button>
-                          <button type="button" className="btn-ghost" disabled={focusN === 0} onClick={clearFocus}>
+                          <button type="button" className="btn-ghost" onClick={() => focusPreset("portrait")} title="Elipse vertical al centro: la persona nítida y el fondo con el efecto">
+                            <UserRound size={15} aria-hidden />
+                            Retrato
+                          </button>
+                          <button type="button" className="btn-ghost" onClick={() => focusPreset("band")} title="Banda horizontal nítida, arriba y abajo con el efecto (efecto miniatura)">
+                            <Rows3 size={15} aria-hidden />
+                            Miniatura
+                          </button>
+                          <button type="button" className="btn-ghost" disabled={focusN === 0} onClick={clearFocus} title="Quitar todas las zonas (Esc)">
+                            <Eraser size={15} aria-hidden />
                             Limpiar
                           </button>
-                          <button type="button" className="btn-send focus-apply" disabled={focusN === 0} onClick={applyFocus}>
+                          <button type="button" className="btn-send focus-apply" disabled={focusN === 0} onClick={applyFocus} title="Aplicar (Enter)">
+                            <Check size={15} aria-hidden />
                             Aplicar{focusN > 0 ? ` (${focusN})` : ""}
                           </button>
                         </div>
@@ -2896,9 +3092,11 @@ export default function Editor({
                 )}
                 <div className="editor-undo">
                   <button type="button" className="btn-ghost" disabled={!canUndo || busy} onClick={undoPaint}>
+                    <Undo2 size={15} aria-hidden />
                     Deshacer
                   </button>
                   <button type="button" className="btn-ghost" disabled={!canRedo || busy} onClick={redoPaint}>
+                    <Redo2 size={15} aria-hidden />
                     Rehacer
                   </button>
                 </div>
@@ -2956,6 +3154,7 @@ export default function Editor({
                     Quitar
                   </button>
                   <button type="button" className="btn-ghost" disabled={pieceUndoN === 0} title="Deshacer (Ctrl+Z)" onClick={undoPieces}>
+                    <Undo2 size={15} aria-hidden />
                     Deshacer
                   </button>
                 </div>
@@ -3048,6 +3247,7 @@ export default function Editor({
                     Quitar
                   </button>
                   <button type="button" className="btn-ghost" disabled={pieceUndoN === 0} title="Deshacer (Ctrl+Z)" onClick={undoPieces}>
+                    <Undo2 size={15} aria-hidden />
                     Deshacer
                   </button>
                 </div>
@@ -3139,6 +3339,7 @@ export default function Editor({
                     <OptRow label="Grosor" value={brush} min={4} max={brushMax} def={36} onChange={setBrush} />
                     <div className="editor-tools" style={{ marginTop: 12 }}>
                       <button type="button" className="btn-ghost" onClick={clearMask}>
+                        <Eraser size={15} aria-hidden />
                         Limpiar máscara
                       </button>
                     </div>
@@ -3240,6 +3441,7 @@ export default function Editor({
                     <OptRow label="Grosor" value={brush} min={4} max={brushMax} def={36} onChange={setBrush} />
                     <div className="editor-tools" style={{ marginTop: 12 }}>
                       <button type="button" className="btn-ghost" onClick={clearMask}>
+                        <Eraser size={15} aria-hidden />
                         Limpiar marca
                       </button>
                     </div>
@@ -3843,10 +4045,14 @@ export function WatermarkDesigner(props: {
   const { wm, setWm } = props;
   const wmFileRef = useRef<HTMLInputElement | null>(null);
 
-  /** Un emoji o ícono de líneas pasa a ser el sello; un carácter de trazo se suma a la frase. */
+  /** Un ícono de líneas pasa a ser el sello; un emoji o un carácter de trazo se escribe en la frase. */
   function pickWmIcon(ch: string) {
-    if (ch.startsWith("fe:") || lucideNode(ch)) setWm((w) => ({ ...w, on: true, mode: "icon", icon: ch }));
-    else setWm((w) => ({ ...w, on: true, mode: "text", text: (w.text + ch).slice(0, 80) }));
+    if (lucideNode(ch)) {
+      setWm((w) => ({ ...w, on: true, mode: "icon", icon: ch }));
+      return;
+    }
+    const add = ch.startsWith("fe:") ? (FLUENT_CHR.get(ch) ?? "") : ch;
+    setWm((w) => ({ ...w, on: true, mode: "text", text: (w.text + add).slice(0, 80) }));
   }
 
   return (
@@ -3934,7 +4140,7 @@ export function WatermarkDesigner(props: {
                     <p className="hint">
                       {wm.mode === "icon"
                         ? "Los emojis conservan sus colores; el color y estilo de abajo vale para los íconos de líneas."
-                        : "Trazo se agrega a la frase. Un emoji o un ícono de líneas pasa a modo Ícono y queda como sello."}
+                        : "Los emojis y los caracteres de Trazo se escriben en la frase. Un ícono de líneas pasa a modo Ícono y queda como sello."}
                     </p>
                     <Card title="Color y estilo">
                       <LookPicker

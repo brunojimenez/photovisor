@@ -1,4 +1,5 @@
 /** Marca de agua en canvas: texto con íconos, repetido en diagonal, o una imagen. */
+import { FLUENT_CHAR } from "./fluentList";
 import { drawLucide, lucideNode } from "./lucideStickers";
 
 export type WmMode = "text" | "image" | "icon";
@@ -191,8 +192,24 @@ const COLOR_KEYS: Record<string, string> = {
 };
 const GRAPHEME_RE = new RegExp(Object.keys(COLOR_KEYS).map((k) => k + "\uFE0F?").join("|") + "|.", "gu");
 
-function graphemes(text: string) {
+const SEGMENTER: { segment: (t: string) => Iterable<{ segment: string }> } | null =
+  typeof Intl !== "undefined" && "Segmenter" in Intl
+    ? new (Intl as unknown as { Segmenter: new (l?: string, o?: object) => { segment: (t: string) => Iterable<{ segment: string }> } }).Segmenter(undefined, { granularity: "grapheme" })
+    : null;
+
+function graphemes(text: string): string[] {
+  if (SEGMENTER) return Array.from(SEGMENTER.segment(text), (part) => part.segment);
   return text.match(GRAPHEME_RE) || [];
+}
+
+/** Nombre del emoji de Fluent que corresponde a este carácter, o "" si no está en el pack. */
+function emojiName(grapheme: string) {
+  return FLUENT_CHAR[grapheme.replace(/\uFE0F/g, "")] ?? "";
+}
+
+/** ¿Este carácter se dibuja como imagen dentro de una frase (emoji del pack o ícono dibujado a mano)? */
+function inlineIcon(grapheme: string) {
+  return Boolean(emojiName(grapheme) || colorKey(grapheme));
 }
 
 function colorKey(grapheme: string) {
@@ -460,7 +477,7 @@ function markWidth(ctx: CanvasRenderingContext2D, text: string, px: number, font
   ctx.font = textFont(px, font);
   let width = 0;
   for (const piece of graphemes(text)) {
-    width += colorKey(piece) ? px * 1.05 : ctx.measureText(plainGlyph(piece)).width;
+    width += inlineIcon(piece) ? px * 1.05 : ctx.measureText(plainGlyph(piece)).width;
   }
   return Math.max(px * 0.4, width);
 }
@@ -475,6 +492,13 @@ function fillMark(ctx: CanvasRenderingContext2D, text: string, x: number, y: num
   const ink = ctx.fillStyle;
   let cursor = x;
   for (const piece of graphemes(text)) {
+    const fe = emojiName(piece);
+    if (fe) {
+      const im = fluentImage(fe);
+      if (im) ctx.drawImage(im, cursor, baseline - asc, px * 0.92, px * 0.92);
+      cursor += px * 1.05;
+      continue;
+    }
     const key = colorKey(piece);
     if (key) {
       drawColorIcon(ctx, key, cursor, baseline - asc, px * 0.92);
@@ -760,15 +784,20 @@ export function drawPieces(ctx: CanvasRenderingContext2D, pieces: Piece[], guide
       const shown = plainGlyph(piece.text);
       ctx.font = textFont(piece.size, piece.font);
       ctx.fillStyle = ink;
+      const withIcons = graphemes(piece.text).some(inlineIcon);
+      const tw = withIcons ? markWidth(ctx, piece.text, piece.size, piece.font) : ctx.measureText(shown).width;
       if (piece.look === "gradient" || piece.look === "rainbow") {
-        const tw = ctx.measureText(shown).width;
         ctx.fillStyle = pieceInk(ctx, piece, ink)(piece.x - tw / 2, piece.y - piece.size / 2, piece.x + tw / 2, piece.y + piece.size / 2);
       }
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(shown, piece.x, piece.y);
+      if (withIcons) {
+        fillMark(ctx, piece.text, piece.x - tw / 2, piece.y, piece.size, piece.font);
+      } else {
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(shown, piece.x, piece.y);
+      }
       if (guideId === piece.id) {
-        const w = Math.max(piece.size, ctx.measureText(shown).width);
+        const w = Math.max(piece.size, tw);
         ctx.strokeStyle = "#ffffff";
         ctx.lineWidth = Math.max(1, piece.size * 0.04);
         ctx.setLineDash([6, 4]);

@@ -1,228 +1,284 @@
 // Generado a partir de Fluent Emoji Flat (Microsoft, licencia MIT: https://github.com/microsoft/fluentui-emoji). No editar a mano.
-export type FluentItem = { id: string; tip: string };
+/** `chr`: el carácter Unicode del emoji, para escribirlo dentro de una frase. */
+export type FluentItem = { id: string; tip: string; chr: string };
 export const FLUENT_CATS: { name: string; items: FluentItem[] }[] = [
  {
   "name": "Caras",
   "items": [
    {
     "id": "fe:grinning-face",
-    "tip": "Sonrisa"
+    "tip": "Sonrisa",
+    "chr": "😀"
    },
    {
     "id": "fe:grinning-face-with-big-eyes",
-    "tip": "Sonrisa con ojos grandes"
+    "tip": "Sonrisa con ojos grandes",
+    "chr": "😃"
    },
    {
     "id": "fe:beaming-face-with-smiling-eyes",
-    "tip": "Radiante"
+    "tip": "Radiante",
+    "chr": "😁"
    },
    {
     "id": "fe:grinning-squinting-face",
-    "tip": "Risa"
+    "tip": "Risa",
+    "chr": "😆"
    },
    {
     "id": "fe:face-with-tears-of-joy",
-    "tip": "Llorando de risa"
+    "tip": "Llorando de risa",
+    "chr": "😂"
    },
    {
     "id": "fe:rolling-on-the-floor-laughing",
-    "tip": "Revolcándose de risa"
+    "tip": "Revolcándose de risa",
+    "chr": "🤣"
    },
    {
     "id": "fe:slightly-smiling-face",
-    "tip": "Sonrisa suave"
+    "tip": "Sonrisa suave",
+    "chr": "🙂"
    },
    {
     "id": "fe:upside-down-face",
-    "tip": "Cara al revés"
+    "tip": "Cara al revés",
+    "chr": "🙃"
    },
    {
     "id": "fe:winking-face",
-    "tip": "Guiño"
+    "tip": "Guiño",
+    "chr": "😉"
    },
    {
     "id": "fe:smiling-face-with-smiling-eyes",
-    "tip": "Feliz"
+    "tip": "Feliz",
+    "chr": "😊"
    },
    {
     "id": "fe:smiling-face-with-halo",
-    "tip": "Angelito"
+    "tip": "Angelito",
+    "chr": "😇"
    },
    {
     "id": "fe:smiling-face-with-hearts",
-    "tip": "Enamorado con corazones"
+    "tip": "Enamorado con corazones",
+    "chr": "🥰"
    },
    {
     "id": "fe:smiling-face-with-heart-eyes",
-    "tip": "Ojos de corazón"
+    "tip": "Ojos de corazón",
+    "chr": "😍"
    },
    {
     "id": "fe:star-struck",
-    "tip": "Ojos de estrella"
+    "tip": "Ojos de estrella",
+    "chr": "🤩"
    },
    {
     "id": "fe:face-blowing-a-kiss",
-    "tip": "Beso volado"
+    "tip": "Beso volado",
+    "chr": "😘"
    },
    {
     "id": "fe:kissing-face",
-    "tip": "Beso"
+    "tip": "Beso",
+    "chr": "😗"
    },
    {
     "id": "fe:face-savoring-food",
-    "tip": "Rico"
+    "tip": "Rico",
+    "chr": "😋"
    },
    {
     "id": "fe:face-with-tongue",
-    "tip": "Lengua afuera"
+    "tip": "Lengua afuera",
+    "chr": "😛"
    },
    {
     "id": "fe:winking-face-with-tongue",
-    "tip": "Guiño con lengua"
+    "tip": "Guiño con lengua",
+    "chr": "😜"
    },
    {
     "id": "fe:zany-face",
-    "tip": "Cara loca"
+    "tip": "Cara loca",
+    "chr": "🤪"
    },
    {
     "id": "fe:money-mouth-face",
-    "tip": "Boca de dinero"
+    "tip": "Boca de dinero",
+    "chr": "🤑"
    },
    {
     "id": "fe:hugging-face",
-    "tip": "Abrazo"
+    "tip": "Abrazo",
+    "chr": "🤗"
    },
    {
     "id": "fe:thinking-face",
-    "tip": "Pensando"
+    "tip": "Pensando",
+    "chr": "🤔"
    },
    {
     "id": "fe:face-with-raised-eyebrow",
-    "tip": "Ceja levantada"
+    "tip": "Ceja levantada",
+    "chr": "🤨"
    },
    {
     "id": "fe:neutral-face",
-    "tip": "Neutral"
+    "tip": "Neutral",
+    "chr": "😐"
    },
    {
     "id": "fe:smirking-face",
-    "tip": "Sonrisa pícara"
+    "tip": "Sonrisa pícara",
+    "chr": "😏"
    },
    {
     "id": "fe:relieved-face",
-    "tip": "Aliviado"
+    "tip": "Aliviado",
+    "chr": "😌"
    },
    {
     "id": "fe:pensive-face",
-    "tip": "Pensativo"
+    "tip": "Pensativo",
+    "chr": "😔"
    },
    {
     "id": "fe:sleepy-face",
-    "tip": "Con sueño"
+    "tip": "Con sueño",
+    "chr": "😪"
    },
    {
     "id": "fe:sleeping-face",
-    "tip": "Durmiendo"
+    "tip": "Durmiendo",
+    "chr": "😴"
    },
    {
     "id": "fe:face-with-medical-mask",
-    "tip": "Con mascarilla"
+    "tip": "Con mascarilla",
+    "chr": "😷"
    },
    {
     "id": "fe:hot-face",
-    "tip": "Con calor"
+    "tip": "Con calor",
+    "chr": "🥵"
    },
    {
     "id": "fe:cold-face",
-    "tip": "Con frío"
+    "tip": "Con frío",
+    "chr": "🥶"
    },
    {
     "id": "fe:exploding-head",
-    "tip": "Cabeza explotando"
+    "tip": "Cabeza explotando",
+    "chr": "🤯"
    },
    {
     "id": "fe:partying-face",
-    "tip": "De fiesta"
+    "tip": "De fiesta",
+    "chr": "🥳"
    },
    {
     "id": "fe:smiling-face-with-sunglasses",
-    "tip": "Con lentes de sol"
+    "tip": "Con lentes de sol",
+    "chr": "😎"
    },
    {
     "id": "fe:nerd-face",
-    "tip": "Nerd"
+    "tip": "Nerd",
+    "chr": "🤓"
    },
    {
     "id": "fe:confused-face",
-    "tip": "Confundido"
+    "tip": "Confundido",
+    "chr": "😕"
    },
    {
     "id": "fe:worried-face",
-    "tip": "Preocupado"
+    "tip": "Preocupado",
+    "chr": "😟"
    },
    {
     "id": "fe:face-holding-back-tears",
-    "tip": "Aguantando el llanto"
+    "tip": "Aguantando el llanto",
+    "chr": "🥹"
    },
    {
     "id": "fe:loudly-crying-face",
-    "tip": "Llorando fuerte"
+    "tip": "Llorando fuerte",
+    "chr": "😭"
    },
    {
     "id": "fe:crying-face",
-    "tip": "Llorando"
+    "tip": "Llorando",
+    "chr": "😢"
    },
    {
     "id": "fe:face-screaming-in-fear",
-    "tip": "Gritando de miedo"
+    "tip": "Gritando de miedo",
+    "chr": "😱"
    },
    {
     "id": "fe:astonished-face",
-    "tip": "Asombrado"
+    "tip": "Asombrado",
+    "chr": "😲"
    },
    {
     "id": "fe:flushed-face",
-    "tip": "Sonrojado"
+    "tip": "Sonrojado",
+    "chr": "😳"
    },
    {
     "id": "fe:pleading-face",
-    "tip": "Carita de ruego"
+    "tip": "Carita de ruego",
+    "chr": "🥺"
    },
    {
     "id": "fe:angry-face",
-    "tip": "Enojado"
+    "tip": "Enojado",
+    "chr": "😠"
    },
    {
     "id": "fe:face-with-symbols-on-mouth",
-    "tip": "Insultando"
+    "tip": "Insultando",
+    "chr": "🤬"
    },
    {
     "id": "fe:skull",
-    "tip": "Calavera"
+    "tip": "Calavera",
+    "chr": "💀"
    },
    {
     "id": "fe:clown-face",
-    "tip": "Payaso"
+    "tip": "Payaso",
+    "chr": "🤡"
    },
    {
     "id": "fe:ghost",
-    "tip": "Fantasma"
+    "tip": "Fantasma",
+    "chr": "👻"
    },
    {
     "id": "fe:alien",
-    "tip": "Extraterrestre"
+    "tip": "Extraterrestre",
+    "chr": "👽"
    },
    {
     "id": "fe:robot",
-    "tip": "Robot"
+    "tip": "Robot",
+    "chr": "🤖"
    },
    {
     "id": "fe:see-no-evil-monkey",
-    "tip": "Mono que no ve"
+    "tip": "Mono que no ve",
+    "chr": "🙈"
    },
    {
     "id": "fe:pile-of-poo",
-    "tip": "Caca"
+    "tip": "Caca",
+    "chr": "💩"
    }
   ]
  },
@@ -231,95 +287,118 @@ export const FLUENT_CATS: { name: string; items: FluentItem[] }[] = [
   "items": [
    {
     "id": "fe:thumbs-up",
-    "tip": "Pulgar arriba"
+    "tip": "Pulgar arriba",
+    "chr": "👍"
    },
    {
     "id": "fe:thumbs-down",
-    "tip": "Pulgar abajo"
+    "tip": "Pulgar abajo",
+    "chr": "👎"
    },
    {
     "id": "fe:clapping-hands",
-    "tip": "Aplausos"
+    "tip": "Aplausos",
+    "chr": "👏"
    },
    {
     "id": "fe:raising-hands",
-    "tip": "Manos arriba"
+    "tip": "Manos arriba",
+    "chr": "🙌"
    },
    {
     "id": "fe:folded-hands",
-    "tip": "Manos juntas"
+    "tip": "Manos juntas",
+    "chr": "🙏"
    },
    {
     "id": "fe:handshake",
-    "tip": "Apretón de manos"
+    "tip": "Apretón de manos",
+    "chr": "🤝"
    },
    {
     "id": "fe:waving-hand",
-    "tip": "Saludo"
+    "tip": "Saludo",
+    "chr": "👋"
    },
    {
     "id": "fe:victory-hand",
-    "tip": "Paz y victoria"
+    "tip": "Paz y victoria",
+    "chr": "✌️"
    },
    {
     "id": "fe:crossed-fingers",
-    "tip": "Dedos cruzados"
+    "tip": "Dedos cruzados",
+    "chr": "🤞"
    },
    {
     "id": "fe:love-you-gesture",
-    "tip": "Te quiero"
+    "tip": "Te quiero",
+    "chr": "🤟"
    },
    {
     "id": "fe:sign-of-the-horns",
-    "tip": "Cuernitos"
+    "tip": "Cuernitos",
+    "chr": "🤘"
    },
    {
     "id": "fe:ok-hand",
-    "tip": "OK"
+    "tip": "OK",
+    "chr": "👌"
    },
    {
     "id": "fe:pinching-hand",
-    "tip": "Poquito"
+    "tip": "Poquito",
+    "chr": "🤏"
    },
    {
     "id": "fe:oncoming-fist",
-    "tip": "Puño"
+    "tip": "Puño",
+    "chr": "👊"
    },
    {
     "id": "fe:flexed-biceps",
-    "tip": "Músculo"
+    "tip": "Músculo",
+    "chr": "💪"
    },
    {
     "id": "fe:backhand-index-pointing-left",
-    "tip": "Señalando a la izquierda"
+    "tip": "Señalando a la izquierda",
+    "chr": "👈"
    },
    {
     "id": "fe:backhand-index-pointing-up",
-    "tip": "Señalando arriba"
+    "tip": "Señalando arriba",
+    "chr": "👆"
    },
    {
     "id": "fe:raised-hand",
-    "tip": "Mano levantada"
+    "tip": "Mano levantada",
+    "chr": "✋️"
    },
    {
     "id": "fe:writing-hand",
-    "tip": "Mano escribiendo"
+    "tip": "Mano escribiendo",
+    "chr": "✍️"
    },
    {
     "id": "fe:eyes",
-    "tip": "Ojos"
+    "tip": "Ojos",
+    "chr": "👀"
    },
    {
     "id": "fe:brain",
-    "tip": "Cerebro"
+    "tip": "Cerebro",
+    "chr": "🧠"
    },
    {
     "id": "fe:footprints",
-    "tip": "Huellas de pies"
+    "tip": "Huellas de pies",
+    "chr": "👣"
    },
    {
     "id": "fe:kiss-mark",
-    "tip": "Marca de beso"
+    "tip": "Marca de beso",
+    "chr": "💋"
    }
   ]
  },
@@ -328,163 +407,203 @@ export const FLUENT_CATS: { name: string; items: FluentItem[] }[] = [
   "items": [
    {
     "id": "fe:red-heart",
-    "tip": "Corazón rojo"
+    "tip": "Corazón rojo",
+    "chr": "❤️"
    },
    {
     "id": "fe:orange-heart",
-    "tip": "Corazón naranja"
+    "tip": "Corazón naranja",
+    "chr": "🧡"
    },
    {
     "id": "fe:yellow-heart",
-    "tip": "Corazón amarillo"
+    "tip": "Corazón amarillo",
+    "chr": "💛"
    },
    {
     "id": "fe:green-heart",
-    "tip": "Corazón verde"
+    "tip": "Corazón verde",
+    "chr": "💚"
    },
    {
     "id": "fe:blue-heart",
-    "tip": "Corazón azul"
+    "tip": "Corazón azul",
+    "chr": "💙"
    },
    {
     "id": "fe:purple-heart",
-    "tip": "Corazón morado"
+    "tip": "Corazón morado",
+    "chr": "💜"
    },
    {
     "id": "fe:black-heart",
-    "tip": "Corazón negro"
+    "tip": "Corazón negro",
+    "chr": "🖤"
    },
    {
     "id": "fe:white-heart",
-    "tip": "Corazón blanco"
+    "tip": "Corazón blanco",
+    "chr": "🤍"
    },
    {
     "id": "fe:broken-heart",
-    "tip": "Corazón roto"
+    "tip": "Corazón roto",
+    "chr": "💔"
    },
    {
     "id": "fe:sparkling-heart",
-    "tip": "Corazón brillante"
+    "tip": "Corazón brillante",
+    "chr": "💖"
    },
    {
     "id": "fe:growing-heart",
-    "tip": "Corazón creciendo"
+    "tip": "Corazón creciendo",
+    "chr": "💗"
    },
    {
     "id": "fe:two-hearts",
-    "tip": "Dos corazones"
+    "tip": "Dos corazones",
+    "chr": "💕"
    },
    {
     "id": "fe:heart-with-arrow",
-    "tip": "Corazón con flecha"
+    "tip": "Corazón con flecha",
+    "chr": "💘"
    },
    {
     "id": "fe:heart-on-fire",
-    "tip": "Corazón en llamas"
+    "tip": "Corazón en llamas",
+    "chr": "❤️‍🔥"
    },
    {
     "id": "fe:fire",
-    "tip": "Fuego"
+    "tip": "Fuego",
+    "chr": "🔥"
    },
    {
     "id": "fe:sparkles",
-    "tip": "Brillos"
+    "tip": "Brillos",
+    "chr": "✨️"
    },
    {
     "id": "fe:star",
-    "tip": "Estrella"
+    "tip": "Estrella",
+    "chr": "⭐️"
    },
    {
     "id": "fe:glowing-star",
-    "tip": "Estrella brillante"
+    "tip": "Estrella brillante",
+    "chr": "🌟"
    },
    {
     "id": "fe:shooting-star",
-    "tip": "Estrella fugaz"
+    "tip": "Estrella fugaz",
+    "chr": "🌠"
    },
    {
     "id": "fe:collision",
-    "tip": "Explosión"
+    "tip": "Explosión",
+    "chr": "💥"
    },
    {
     "id": "fe:hundred-points",
-    "tip": "Cien puntos"
+    "tip": "Cien puntos",
+    "chr": "💯"
    },
    {
     "id": "fe:high-voltage",
-    "tip": "Rayo"
+    "tip": "Rayo",
+    "chr": "⚡️"
    },
    {
     "id": "fe:check-mark-button",
-    "tip": "Visto bueno"
+    "tip": "Visto bueno",
+    "chr": "✅️"
    },
    {
     "id": "fe:cross-mark",
-    "tip": "Cruz"
+    "tip": "Cruz",
+    "chr": "❌️"
    },
    {
     "id": "fe:warning",
-    "tip": "Advertencia"
+    "tip": "Advertencia",
+    "chr": "⚠️"
    },
    {
     "id": "fe:prohibited",
-    "tip": "Prohibido"
+    "tip": "Prohibido",
+    "chr": "🚫"
    },
    {
     "id": "fe:red-question-mark",
-    "tip": "Interrogación"
+    "tip": "Interrogación",
+    "chr": "❓️"
    },
    {
     "id": "fe:red-exclamation-mark",
-    "tip": "Exclamación"
+    "tip": "Exclamación",
+    "chr": "❗️"
    },
    {
     "id": "fe:double-exclamation-mark",
-    "tip": "Doble exclamación"
+    "tip": "Doble exclamación",
+    "chr": "‼️"
    },
    {
     "id": "fe:speech-balloon",
-    "tip": "Globo de diálogo"
+    "tip": "Globo de diálogo",
+    "chr": "💬"
    },
    {
     "id": "fe:thought-balloon",
-    "tip": "Globo de pensamiento"
+    "tip": "Globo de pensamiento",
+    "chr": "💭"
    },
    {
     "id": "fe:zzz",
-    "tip": "Zzz"
+    "tip": "Zzz",
+    "chr": "💤"
    },
    {
     "id": "fe:musical-note",
-    "tip": "Nota musical"
+    "tip": "Nota musical",
+    "chr": "🎵"
    },
    {
     "id": "fe:musical-notes",
-    "tip": "Notas musicales"
+    "tip": "Notas musicales",
+    "chr": "🎶"
    },
    {
     "id": "fe:infinity",
-    "tip": "Infinito"
+    "tip": "Infinito",
+    "chr": "♾️"
    },
    {
     "id": "fe:recycling-symbol",
-    "tip": "Reciclaje"
+    "tip": "Reciclaje",
+    "chr": "♻️"
    },
    {
     "id": "fe:peace-symbol",
-    "tip": "Paz"
+    "tip": "Paz",
+    "chr": "☮️"
    },
    {
     "id": "fe:yin-yang",
-    "tip": "Yin yang"
+    "tip": "Yin yang",
+    "chr": "☯️"
    },
    {
     "id": "fe:bell",
-    "tip": "Campana"
+    "tip": "Campana",
+    "chr": "🔔"
    },
    {
     "id": "fe:red-circle",
-    "tip": "Círculo rojo"
+    "tip": "Círculo rojo",
+    "chr": "🔴"
    }
   ]
  },
@@ -493,203 +612,253 @@ export const FLUENT_CATS: { name: string; items: FluentItem[] }[] = [
   "items": [
    {
     "id": "fe:dog-face",
-    "tip": "Perro"
+    "tip": "Perro",
+    "chr": "🐶"
    },
    {
     "id": "fe:cat-face",
-    "tip": "Gato"
+    "tip": "Gato",
+    "chr": "🐱"
    },
    {
     "id": "fe:mouse-face",
-    "tip": "Ratón"
+    "tip": "Ratón",
+    "chr": "🐭"
    },
    {
     "id": "fe:rabbit-face",
-    "tip": "Conejo"
+    "tip": "Conejo",
+    "chr": "🐰"
    },
    {
     "id": "fe:fox",
-    "tip": "Zorro"
+    "tip": "Zorro",
+    "chr": "🦊"
    },
    {
     "id": "fe:bear",
-    "tip": "Oso"
+    "tip": "Oso",
+    "chr": "🐻"
    },
    {
     "id": "fe:panda",
-    "tip": "Panda"
+    "tip": "Panda",
+    "chr": "🐼"
    },
    {
     "id": "fe:koala",
-    "tip": "Koala"
+    "tip": "Koala",
+    "chr": "🐨"
    },
    {
     "id": "fe:tiger-face",
-    "tip": "Tigre"
+    "tip": "Tigre",
+    "chr": "🐯"
    },
    {
     "id": "fe:lion",
-    "tip": "León"
+    "tip": "León",
+    "chr": "🦁"
    },
    {
     "id": "fe:cow-face",
-    "tip": "Vaca"
+    "tip": "Vaca",
+    "chr": "🐮"
    },
    {
     "id": "fe:pig-face",
-    "tip": "Cerdo"
+    "tip": "Cerdo",
+    "chr": "🐷"
    },
    {
     "id": "fe:frog",
-    "tip": "Rana"
+    "tip": "Rana",
+    "chr": "🐸"
    },
    {
     "id": "fe:monkey-face",
-    "tip": "Mono"
+    "tip": "Mono",
+    "chr": "🐵"
    },
    {
     "id": "fe:chicken",
-    "tip": "Gallina"
+    "tip": "Gallina",
+    "chr": "🐔"
    },
    {
     "id": "fe:penguin",
-    "tip": "Pingüino"
+    "tip": "Pingüino",
+    "chr": "🐧"
    },
    {
     "id": "fe:owl",
-    "tip": "Búho"
+    "tip": "Búho",
+    "chr": "🦉"
    },
    {
     "id": "fe:eagle",
-    "tip": "Águila"
+    "tip": "Águila",
+    "chr": "🦅"
    },
    {
     "id": "fe:unicorn",
-    "tip": "Unicornio"
+    "tip": "Unicornio",
+    "chr": "🦄"
    },
    {
     "id": "fe:honeybee",
-    "tip": "Abeja"
+    "tip": "Abeja",
+    "chr": "🐝"
    },
    {
     "id": "fe:butterfly",
-    "tip": "Mariposa"
+    "tip": "Mariposa",
+    "chr": "🦋"
    },
    {
     "id": "fe:lady-beetle",
-    "tip": "Mariquita"
+    "tip": "Mariquita",
+    "chr": "🐞"
    },
    {
     "id": "fe:turtle",
-    "tip": "Tortuga"
+    "tip": "Tortuga",
+    "chr": "🐢"
    },
    {
     "id": "fe:snake",
-    "tip": "Serpiente"
+    "tip": "Serpiente",
+    "chr": "🐍"
    },
    {
     "id": "fe:octopus",
-    "tip": "Pulpo"
+    "tip": "Pulpo",
+    "chr": "🐙"
    },
    {
     "id": "fe:whale",
-    "tip": "Ballena"
+    "tip": "Ballena",
+    "chr": "🐋"
    },
    {
     "id": "fe:dolphin",
-    "tip": "Delfín"
+    "tip": "Delfín",
+    "chr": "🐬"
    },
    {
     "id": "fe:tropical-fish",
-    "tip": "Pez tropical"
+    "tip": "Pez tropical",
+    "chr": "🐠"
    },
    {
     "id": "fe:shark",
-    "tip": "Tiburón"
+    "tip": "Tiburón",
+    "chr": "🦈"
    },
    {
     "id": "fe:paw-prints",
-    "tip": "Huellas de patas"
+    "tip": "Huellas de patas",
+    "chr": "🐾"
    },
    {
     "id": "fe:sun",
-    "tip": "Sol"
+    "tip": "Sol",
+    "chr": "☀️"
    },
    {
     "id": "fe:sun-behind-cloud",
-    "tip": "Sol con nubes"
+    "tip": "Sol con nubes",
+    "chr": "⛅️"
    },
    {
     "id": "fe:cloud",
-    "tip": "Nube"
+    "tip": "Nube",
+    "chr": "☁️"
    },
    {
     "id": "fe:rainbow",
-    "tip": "Arcoíris"
+    "tip": "Arcoíris",
+    "chr": "🌈"
    },
    {
     "id": "fe:crescent-moon",
-    "tip": "Luna creciente"
+    "tip": "Luna creciente",
+    "chr": "🌙"
    },
    {
     "id": "fe:full-moon",
-    "tip": "Luna llena"
+    "tip": "Luna llena",
+    "chr": "🌕"
    },
    {
     "id": "fe:snowflake",
-    "tip": "Copo de nieve"
+    "tip": "Copo de nieve",
+    "chr": "❄️"
    },
    {
     "id": "fe:cloud-with-lightning-and-rain",
-    "tip": "Tormenta"
+    "tip": "Tormenta",
+    "chr": "⛈️"
    },
    {
     "id": "fe:droplet",
-    "tip": "Gota"
+    "tip": "Gota",
+    "chr": "💧"
    },
    {
     "id": "fe:water-wave",
-    "tip": "Ola"
+    "tip": "Ola",
+    "chr": "🌊"
    },
    {
     "id": "fe:cherry-blossom",
-    "tip": "Flor de cerezo"
+    "tip": "Flor de cerezo",
+    "chr": "🌸"
    },
    {
     "id": "fe:rose",
-    "tip": "Rosa"
+    "tip": "Rosa",
+    "chr": "🌹"
    },
    {
     "id": "fe:sunflower",
-    "tip": "Girasol"
+    "tip": "Girasol",
+    "chr": "🌻"
    },
    {
     "id": "fe:tulip",
-    "tip": "Tulipán"
+    "tip": "Tulipán",
+    "chr": "🌷"
    },
    {
     "id": "fe:four-leaf-clover",
-    "tip": "Trébol de cuatro hojas"
+    "tip": "Trébol de cuatro hojas",
+    "chr": "🍀"
    },
    {
     "id": "fe:maple-leaf",
-    "tip": "Hoja de arce"
+    "tip": "Hoja de arce",
+    "chr": "🍁"
    },
    {
     "id": "fe:palm-tree",
-    "tip": "Palmera"
+    "tip": "Palmera",
+    "chr": "🌴"
    },
    {
     "id": "fe:evergreen-tree",
-    "tip": "Pino"
+    "tip": "Pino",
+    "chr": "🌲"
    },
    {
     "id": "fe:cactus",
-    "tip": "Cactus"
+    "tip": "Cactus",
+    "chr": "🌵"
    },
    {
     "id": "fe:mushroom",
-    "tip": "Hongo"
+    "tip": "Hongo",
+    "chr": "🍄"
    }
   ]
  },
@@ -698,155 +867,193 @@ export const FLUENT_CATS: { name: string; items: FluentItem[] }[] = [
   "items": [
    {
     "id": "fe:red-apple",
-    "tip": "Manzana"
+    "tip": "Manzana",
+    "chr": "🍎"
    },
    {
     "id": "fe:banana",
-    "tip": "Plátano"
+    "tip": "Plátano",
+    "chr": "🍌"
    },
    {
     "id": "fe:watermelon",
-    "tip": "Sandía"
+    "tip": "Sandía",
+    "chr": "🍉"
    },
    {
     "id": "fe:grapes",
-    "tip": "Uvas"
+    "tip": "Uvas",
+    "chr": "🍇"
    },
    {
     "id": "fe:strawberry",
-    "tip": "Frutilla"
+    "tip": "Frutilla",
+    "chr": "🍓"
    },
    {
     "id": "fe:cherries",
-    "tip": "Cerezas"
+    "tip": "Cerezas",
+    "chr": "🍒"
    },
    {
     "id": "fe:peach",
-    "tip": "Durazno"
+    "tip": "Durazno",
+    "chr": "🍑"
    },
    {
     "id": "fe:pineapple",
-    "tip": "Piña"
+    "tip": "Piña",
+    "chr": "🍍"
    },
    {
     "id": "fe:lemon",
-    "tip": "Limón"
+    "tip": "Limón",
+    "chr": "🍋"
    },
    {
     "id": "fe:avocado",
-    "tip": "Palta"
+    "tip": "Palta",
+    "chr": "🥑"
    },
    {
     "id": "fe:tomato",
-    "tip": "Tomate"
+    "tip": "Tomate",
+    "chr": "🍅"
    },
    {
     "id": "fe:carrot",
-    "tip": "Zanahoria"
+    "tip": "Zanahoria",
+    "chr": "🥕"
    },
    {
     "id": "fe:hot-pepper",
-    "tip": "Ají"
+    "tip": "Ají",
+    "chr": "🌶"
    },
    {
     "id": "fe:ear-of-corn",
-    "tip": "Choclo"
+    "tip": "Choclo",
+    "chr": "🌽"
    },
    {
     "id": "fe:bread",
-    "tip": "Pan"
+    "tip": "Pan",
+    "chr": "🍞"
    },
    {
     "id": "fe:cheese-wedge",
-    "tip": "Queso"
+    "tip": "Queso",
+    "chr": "🧀"
    },
    {
     "id": "fe:hamburger",
-    "tip": "Hamburguesa"
+    "tip": "Hamburguesa",
+    "chr": "🍔"
    },
    {
     "id": "fe:french-fries",
-    "tip": "Papas fritas"
+    "tip": "Papas fritas",
+    "chr": "🍟"
    },
    {
     "id": "fe:pizza",
-    "tip": "Pizza"
+    "tip": "Pizza",
+    "chr": "🍕"
    },
    {
     "id": "fe:hot-dog",
-    "tip": "Completo"
+    "tip": "Completo",
+    "chr": "🌭"
    },
    {
     "id": "fe:taco",
-    "tip": "Taco"
+    "tip": "Taco",
+    "chr": "🌮"
    },
    {
     "id": "fe:sushi",
-    "tip": "Sushi"
+    "tip": "Sushi",
+    "chr": "🍣"
    },
    {
     "id": "fe:spaghetti",
-    "tip": "Espagueti"
+    "tip": "Espagueti",
+    "chr": "🍝"
    },
    {
     "id": "fe:cooked-rice",
-    "tip": "Arroz"
+    "tip": "Arroz",
+    "chr": "🍚"
    },
    {
     "id": "fe:popcorn",
-    "tip": "Cabritas"
+    "tip": "Cabritas",
+    "chr": "🍿"
    },
    {
     "id": "fe:doughnut",
-    "tip": "Dona"
+    "tip": "Dona",
+    "chr": "🍩"
    },
    {
     "id": "fe:cookie",
-    "tip": "Galleta"
+    "tip": "Galleta",
+    "chr": "🍪"
    },
    {
     "id": "fe:birthday-cake",
-    "tip": "Torta de cumpleaños"
+    "tip": "Torta de cumpleaños",
+    "chr": "🎂"
    },
    {
     "id": "fe:cupcake",
-    "tip": "Cupcake"
+    "tip": "Cupcake",
+    "chr": "🧁"
    },
    {
     "id": "fe:ice-cream",
-    "tip": "Helado"
+    "tip": "Helado",
+    "chr": "🍨"
    },
    {
     "id": "fe:chocolate-bar",
-    "tip": "Chocolate"
+    "tip": "Chocolate",
+    "chr": "🍫"
    },
    {
     "id": "fe:candy",
-    "tip": "Dulce"
+    "tip": "Dulce",
+    "chr": "🍬"
    },
    {
     "id": "fe:hot-beverage",
-    "tip": "Café"
+    "tip": "Café",
+    "chr": "☕️"
    },
    {
     "id": "fe:beer-mug",
-    "tip": "Cerveza"
+    "tip": "Cerveza",
+    "chr": "🍺"
    },
    {
     "id": "fe:clinking-glasses",
-    "tip": "Brindis"
+    "tip": "Brindis",
+    "chr": "🥂"
    },
    {
     "id": "fe:wine-glass",
-    "tip": "Copa de vino"
+    "tip": "Copa de vino",
+    "chr": "🍷"
    },
    {
     "id": "fe:bottle-with-popping-cork",
-    "tip": "Champaña"
+    "tip": "Champaña",
+    "chr": "🍾"
    },
    {
     "id": "fe:tropical-drink",
-    "tip": "Trago tropical"
+    "tip": "Trago tropical",
+    "chr": "🍹"
    }
   ]
  },
@@ -855,107 +1062,133 @@ export const FLUENT_CATS: { name: string; items: FluentItem[] }[] = [
   "items": [
    {
     "id": "fe:automobile",
-    "tip": "Auto"
+    "tip": "Auto",
+    "chr": "🚗"
    },
    {
     "id": "fe:bus",
-    "tip": "Bus"
+    "tip": "Bus",
+    "chr": "🚌"
    },
    {
     "id": "fe:bicycle",
-    "tip": "Bicicleta"
+    "tip": "Bicicleta",
+    "chr": "🚲"
    },
    {
     "id": "fe:motorcycle",
-    "tip": "Moto"
+    "tip": "Moto",
+    "chr": "🏍"
    },
    {
     "id": "fe:airplane",
-    "tip": "Avión"
+    "tip": "Avión",
+    "chr": "✈️"
    },
    {
     "id": "fe:rocket",
-    "tip": "Cohete"
+    "tip": "Cohete",
+    "chr": "🚀"
    },
    {
     "id": "fe:sailboat",
-    "tip": "Velero"
+    "tip": "Velero",
+    "chr": "⛵️"
    },
    {
     "id": "fe:ship",
-    "tip": "Barco"
+    "tip": "Barco",
+    "chr": "🚢"
    },
    {
     "id": "fe:train",
-    "tip": "Tren"
+    "tip": "Tren",
+    "chr": "🚆"
    },
    {
     "id": "fe:house",
-    "tip": "Casa"
+    "tip": "Casa",
+    "chr": "🏠"
    },
    {
     "id": "fe:hotel",
-    "tip": "Hotel"
+    "tip": "Hotel",
+    "chr": "🏨"
    },
    {
     "id": "fe:castle",
-    "tip": "Castillo"
+    "tip": "Castillo",
+    "chr": "🏰"
    },
    {
     "id": "fe:tokyo-tower",
-    "tip": "Torre de Tokio"
+    "tip": "Torre de Tokio",
+    "chr": "🗼"
    },
    {
     "id": "fe:statue-of-liberty",
-    "tip": "Estatua de la Libertad"
+    "tip": "Estatua de la Libertad",
+    "chr": "🗽"
    },
    {
     "id": "fe:mount-fuji",
-    "tip": "Monte Fuji"
+    "tip": "Monte Fuji",
+    "chr": "🗻"
    },
    {
     "id": "fe:mountain",
-    "tip": "Montaña"
+    "tip": "Montaña",
+    "chr": "⛰️"
    },
    {
     "id": "fe:snow-capped-mountain",
-    "tip": "Montaña nevada"
+    "tip": "Montaña nevada",
+    "chr": "🏔"
    },
    {
     "id": "fe:camping",
-    "tip": "Camping"
+    "tip": "Camping",
+    "chr": "🏕"
    },
    {
     "id": "fe:beach-with-umbrella",
-    "tip": "Playa"
+    "tip": "Playa",
+    "chr": "🏖"
    },
    {
     "id": "fe:desert-island",
-    "tip": "Isla desierta"
+    "tip": "Isla desierta",
+    "chr": "🏝"
    },
    {
     "id": "fe:sunrise",
-    "tip": "Amanecer"
+    "tip": "Amanecer",
+    "chr": "🌅"
    },
    {
     "id": "fe:night-with-stars",
-    "tip": "Noche estrellada"
+    "tip": "Noche estrellada",
+    "chr": "🌃"
    },
    {
     "id": "fe:globe-showing-americas",
-    "tip": "Mundo, América"
+    "tip": "Mundo, América",
+    "chr": "🌎"
    },
    {
     "id": "fe:compass",
-    "tip": "Brújula"
+    "tip": "Brújula",
+    "chr": "🧭"
    },
    {
     "id": "fe:world-map",
-    "tip": "Mapa del mundo"
+    "tip": "Mapa del mundo",
+    "chr": "🗺"
    },
    {
     "id": "fe:luggage",
-    "tip": "Equipaje"
+    "tip": "Equipaje",
+    "chr": "🧳"
    }
   ]
  },
@@ -964,103 +1197,128 @@ export const FLUENT_CATS: { name: string; items: FluentItem[] }[] = [
   "items": [
    {
     "id": "fe:balloon",
-    "tip": "Globo"
+    "tip": "Globo",
+    "chr": "🎈"
    },
    {
     "id": "fe:party-popper",
-    "tip": "Cañón de confeti"
+    "tip": "Cañón de confeti",
+    "chr": "🎉"
    },
    {
     "id": "fe:confetti-ball",
-    "tip": "Bola de confeti"
+    "tip": "Bola de confeti",
+    "chr": "🎊"
    },
    {
     "id": "fe:wrapped-gift",
-    "tip": "Regalo"
+    "tip": "Regalo",
+    "chr": "🎁"
    },
    {
     "id": "fe:ribbon",
-    "tip": "Cinta"
+    "tip": "Cinta",
+    "chr": "🎀"
    },
    {
     "id": "fe:christmas-tree",
-    "tip": "Árbol de Navidad"
+    "tip": "Árbol de Navidad",
+    "chr": "🎄"
    },
    {
     "id": "fe:jack-o-lantern",
-    "tip": "Calabaza de Halloween"
+    "tip": "Calabaza de Halloween",
+    "chr": "🎃"
    },
    {
     "id": "fe:fireworks",
-    "tip": "Fuegos artificiales"
+    "tip": "Fuegos artificiales",
+    "chr": "🎆"
    },
    {
     "id": "fe:sparkler",
-    "tip": "Bengala"
+    "tip": "Bengala",
+    "chr": "🎇"
    },
    {
     "id": "fe:trophy",
-    "tip": "Trofeo"
+    "tip": "Trofeo",
+    "chr": "🏆"
    },
    {
     "id": "fe:1st-place-medal",
-    "tip": "Medalla de oro"
+    "tip": "Medalla de oro",
+    "chr": "🥇"
    },
    {
     "id": "fe:soccer-ball",
-    "tip": "Pelota de fútbol"
+    "tip": "Pelota de fútbol",
+    "chr": "⚽️"
    },
    {
     "id": "fe:basketball",
-    "tip": "Básquetbol"
+    "tip": "Básquetbol",
+    "chr": "🏀"
    },
    {
     "id": "fe:tennis",
-    "tip": "Tenis"
+    "tip": "Tenis",
+    "chr": "🎾"
    },
    {
     "id": "fe:video-game",
-    "tip": "Videojuego"
+    "tip": "Videojuego",
+    "chr": "🎮"
    },
    {
     "id": "fe:game-die",
-    "tip": "Dado"
+    "tip": "Dado",
+    "chr": "🎲"
    },
    {
     "id": "fe:performing-arts",
-    "tip": "Teatro"
+    "tip": "Teatro",
+    "chr": "🎭"
    },
    {
     "id": "fe:artist-palette",
-    "tip": "Paleta de pintor"
+    "tip": "Paleta de pintor",
+    "chr": "🎨"
    },
    {
     "id": "fe:microphone",
-    "tip": "Micrófono"
+    "tip": "Micrófono",
+    "chr": "🎤"
    },
    {
     "id": "fe:headphone",
-    "tip": "Audífonos"
+    "tip": "Audífonos",
+    "chr": "🎧"
    },
    {
     "id": "fe:guitar",
-    "tip": "Guitarra"
+    "tip": "Guitarra",
+    "chr": "🎸"
    },
    {
     "id": "fe:crown",
-    "tip": "Corona"
+    "tip": "Corona",
+    "chr": "👑"
    },
    {
     "id": "fe:gem-stone",
-    "tip": "Gema"
+    "tip": "Gema",
+    "chr": "💎"
    },
    {
     "id": "fe:top-hat",
-    "tip": "Sombrero de copa"
+    "tip": "Sombrero de copa",
+    "chr": "🎩"
    },
    {
     "id": "fe:bullseye",
-    "tip": "Diana"
+    "tip": "Diana",
+    "chr": "🎯"
    }
   ]
  },
@@ -1069,136 +1327,172 @@ export const FLUENT_CATS: { name: string; items: FluentItem[] }[] = [
   "items": [
    {
     "id": "fe:camera",
-    "tip": "Cámara"
+    "tip": "Cámara",
+    "chr": "📷"
    },
    {
     "id": "fe:camera-with-flash",
-    "tip": "Cámara con flash"
+    "tip": "Cámara con flash",
+    "chr": "📸"
    },
    {
     "id": "fe:video-camera",
-    "tip": "Cámara de video"
+    "tip": "Cámara de video",
+    "chr": "📹"
    },
    {
     "id": "fe:film-frames",
-    "tip": "Fotogramas"
+    "tip": "Fotogramas",
+    "chr": "🎞"
    },
    {
     "id": "fe:movie-camera",
-    "tip": "Cámara de cine"
+    "tip": "Cámara de cine",
+    "chr": "🎥"
    },
    {
     "id": "fe:mobile-phone",
-    "tip": "Celular"
+    "tip": "Celular",
+    "chr": "📱"
    },
    {
     "id": "fe:laptop",
-    "tip": "Notebook"
+    "tip": "Notebook",
+    "chr": "💻"
    },
    {
     "id": "fe:light-bulb",
-    "tip": "Ampolleta"
+    "tip": "Ampolleta",
+    "chr": "💡"
    },
    {
     "id": "fe:books",
-    "tip": "Libros"
+    "tip": "Libros",
+    "chr": "📚"
    },
    {
     "id": "fe:open-book",
-    "tip": "Libro abierto"
+    "tip": "Libro abierto",
+    "chr": "📖"
    },
    {
     "id": "fe:pencil",
-    "tip": "Lápiz"
+    "tip": "Lápiz",
+    "chr": "✏️"
    },
    {
     "id": "fe:memo",
-    "tip": "Nota"
+    "tip": "Nota",
+    "chr": "📝"
    },
    {
     "id": "fe:pushpin",
-    "tip": "Chincheta"
+    "tip": "Chincheta",
+    "chr": "📌"
    },
    {
     "id": "fe:round-pushpin",
-    "tip": "Ubicación"
+    "tip": "Ubicación",
+    "chr": "📍"
    },
    {
     "id": "fe:paperclip",
-    "tip": "Clip"
+    "tip": "Clip",
+    "chr": "📎"
    },
    {
     "id": "fe:scissors",
-    "tip": "Tijeras"
+    "tip": "Tijeras",
+    "chr": "✂️"
    },
    {
     "id": "fe:key",
-    "tip": "Llave"
+    "tip": "Llave",
+    "chr": "🔑"
    },
    {
     "id": "fe:locked",
-    "tip": "Candado cerrado"
+    "tip": "Candado cerrado",
+    "chr": "🔒"
    },
    {
     "id": "fe:magnifying-glass-tilted-left",
-    "tip": "Lupa"
+    "tip": "Lupa",
+    "chr": "🔍"
    },
    {
     "id": "fe:hammer",
-    "tip": "Martillo"
+    "tip": "Martillo",
+    "chr": "🔨"
    },
    {
     "id": "fe:gear",
-    "tip": "Engranaje"
+    "tip": "Engranaje",
+    "chr": "⚙️"
    },
    {
     "id": "fe:bomb",
-    "tip": "Bomba"
+    "tip": "Bomba",
+    "chr": "💣"
    },
    {
     "id": "fe:money-bag",
-    "tip": "Bolsa de dinero"
+    "tip": "Bolsa de dinero",
+    "chr": "💰"
    },
    {
     "id": "fe:credit-card",
-    "tip": "Tarjeta"
+    "tip": "Tarjeta",
+    "chr": "💳"
    },
    {
     "id": "fe:envelope",
-    "tip": "Sobre"
+    "tip": "Sobre",
+    "chr": "✉️"
    },
    {
     "id": "fe:package",
-    "tip": "Paquete"
+    "tip": "Paquete",
+    "chr": "📦"
    },
    {
     "id": "fe:calendar",
-    "tip": "Calendario"
+    "tip": "Calendario",
+    "chr": "📅"
    },
    {
     "id": "fe:alarm-clock",
-    "tip": "Despertador"
+    "tip": "Despertador",
+    "chr": "⏰️"
    },
    {
     "id": "fe:hourglass-not-done",
-    "tip": "Reloj de arena"
+    "tip": "Reloj de arena",
+    "chr": "⏳️"
    },
    {
     "id": "fe:glasses",
-    "tip": "Lentes"
+    "tip": "Lentes",
+    "chr": "👓"
    },
    {
     "id": "fe:sunglasses",
-    "tip": "Lentes de sol"
+    "tip": "Lentes de sol",
+    "chr": "🕶"
    },
    {
     "id": "fe:t-shirt",
-    "tip": "Polera"
+    "tip": "Polera",
+    "chr": "👕"
    },
    {
     "id": "fe:backpack",
-    "tip": "Mochila"
+    "tip": "Mochila",
+    "chr": "🎒"
    }
   ]
  }
 ];
+
+/** Carácter Unicode (sin el selector de variación) -> nombre del emoji en el pack. */
+export const FLUENT_CHAR: Record<string, string> = {"😀":"grinning-face","😃":"grinning-face-with-big-eyes","😁":"beaming-face-with-smiling-eyes","😆":"grinning-squinting-face","😂":"face-with-tears-of-joy","🤣":"rolling-on-the-floor-laughing","🙂":"slightly-smiling-face","🙃":"upside-down-face","😉":"winking-face","😊":"smiling-face-with-smiling-eyes","😇":"smiling-face-with-halo","🥰":"smiling-face-with-hearts","😍":"smiling-face-with-heart-eyes","🤩":"star-struck","😘":"face-blowing-a-kiss","😗":"kissing-face","😋":"face-savoring-food","😛":"face-with-tongue","😜":"winking-face-with-tongue","🤪":"zany-face","🤑":"money-mouth-face","🤗":"hugging-face","🤔":"thinking-face","🤨":"face-with-raised-eyebrow","😐":"neutral-face","😏":"smirking-face","😌":"relieved-face","😔":"pensive-face","😪":"sleepy-face","😴":"sleeping-face","😷":"face-with-medical-mask","🥵":"hot-face","🥶":"cold-face","🤯":"exploding-head","🥳":"partying-face","😎":"smiling-face-with-sunglasses","🤓":"nerd-face","😕":"confused-face","😟":"worried-face","🥹":"face-holding-back-tears","😭":"loudly-crying-face","😢":"crying-face","😱":"face-screaming-in-fear","😲":"astonished-face","😳":"flushed-face","🥺":"pleading-face","😠":"angry-face","🤬":"face-with-symbols-on-mouth","💀":"skull","🤡":"clown-face","👻":"ghost","👽":"alien","🤖":"robot","🙈":"see-no-evil-monkey","💩":"pile-of-poo","👍":"thumbs-up","👎":"thumbs-down","👏":"clapping-hands","🙌":"raising-hands","🙏":"folded-hands","🤝":"handshake","👋":"waving-hand","✌":"victory-hand","🤞":"crossed-fingers","🤟":"love-you-gesture","🤘":"sign-of-the-horns","👌":"ok-hand","🤏":"pinching-hand","👊":"oncoming-fist","💪":"flexed-biceps","👈":"backhand-index-pointing-left","👆":"backhand-index-pointing-up","✋":"raised-hand","✍":"writing-hand","👀":"eyes","🧠":"brain","👣":"footprints","💋":"kiss-mark","❤":"red-heart","🧡":"orange-heart","💛":"yellow-heart","💚":"green-heart","💙":"blue-heart","💜":"purple-heart","🖤":"black-heart","🤍":"white-heart","💔":"broken-heart","💖":"sparkling-heart","💗":"growing-heart","💕":"two-hearts","💘":"heart-with-arrow","❤‍🔥":"heart-on-fire","🔥":"fire","✨":"sparkles","⭐":"star","🌟":"glowing-star","🌠":"shooting-star","💥":"collision","💯":"hundred-points","⚡":"high-voltage","✅":"check-mark-button","❌":"cross-mark","⚠":"warning","🚫":"prohibited","❓":"red-question-mark","❗":"red-exclamation-mark","‼":"double-exclamation-mark","💬":"speech-balloon","💭":"thought-balloon","💤":"zzz","🎵":"musical-note","🎶":"musical-notes","♾":"infinity","♻":"recycling-symbol","☮":"peace-symbol","☯":"yin-yang","🔔":"bell","🔴":"red-circle","🐶":"dog-face","🐱":"cat-face","🐭":"mouse-face","🐰":"rabbit-face","🦊":"fox","🐻":"bear","🐼":"panda","🐨":"koala","🐯":"tiger-face","🦁":"lion","🐮":"cow-face","🐷":"pig-face","🐸":"frog","🐵":"monkey-face","🐔":"chicken","🐧":"penguin","🦉":"owl","🦅":"eagle","🦄":"unicorn","🐝":"honeybee","🦋":"butterfly","🐞":"lady-beetle","🐢":"turtle","🐍":"snake","🐙":"octopus","🐋":"whale","🐬":"dolphin","🐠":"tropical-fish","🦈":"shark","🐾":"paw-prints","☀":"sun","⛅":"sun-behind-cloud","☁":"cloud","🌈":"rainbow","🌙":"crescent-moon","🌕":"full-moon","❄":"snowflake","⛈":"cloud-with-lightning-and-rain","💧":"droplet","🌊":"water-wave","🌸":"cherry-blossom","🌹":"rose","🌻":"sunflower","🌷":"tulip","🍀":"four-leaf-clover","🍁":"maple-leaf","🌴":"palm-tree","🌲":"evergreen-tree","🌵":"cactus","🍄":"mushroom","🍎":"red-apple","🍌":"banana","🍉":"watermelon","🍇":"grapes","🍓":"strawberry","🍒":"cherries","🍑":"peach","🍍":"pineapple","🍋":"lemon","🥑":"avocado","🍅":"tomato","🥕":"carrot","🌶":"hot-pepper","🌽":"ear-of-corn","🍞":"bread","🧀":"cheese-wedge","🍔":"hamburger","🍟":"french-fries","🍕":"pizza","🌭":"hot-dog","🌮":"taco","🍣":"sushi","🍝":"spaghetti","🍚":"cooked-rice","🍿":"popcorn","🍩":"doughnut","🍪":"cookie","🎂":"birthday-cake","🧁":"cupcake","🍨":"ice-cream","🍫":"chocolate-bar","🍬":"candy","☕":"hot-beverage","🍺":"beer-mug","🥂":"clinking-glasses","🍷":"wine-glass","🍾":"bottle-with-popping-cork","🍹":"tropical-drink","🚗":"automobile","🚌":"bus","🚲":"bicycle","🏍":"motorcycle","✈":"airplane","🚀":"rocket","⛵":"sailboat","🚢":"ship","🚆":"train","🏠":"house","🏨":"hotel","🏰":"castle","🗼":"tokyo-tower","🗽":"statue-of-liberty","🗻":"mount-fuji","⛰":"mountain","🏔":"snow-capped-mountain","🏕":"camping","🏖":"beach-with-umbrella","🏝":"desert-island","🌅":"sunrise","🌃":"night-with-stars","🌎":"globe-showing-americas","🧭":"compass","🗺":"world-map","🧳":"luggage","🎈":"balloon","🎉":"party-popper","🎊":"confetti-ball","🎁":"wrapped-gift","🎀":"ribbon","🎄":"christmas-tree","🎃":"jack-o-lantern","🎆":"fireworks","🎇":"sparkler","🏆":"trophy","🥇":"1st-place-medal","⚽":"soccer-ball","🏀":"basketball","🎾":"tennis","🎮":"video-game","🎲":"game-die","🎭":"performing-arts","🎨":"artist-palette","🎤":"microphone","🎧":"headphone","🎸":"guitar","👑":"crown","💎":"gem-stone","🎩":"top-hat","🎯":"bullseye","📷":"camera","📸":"camera-with-flash","📹":"video-camera","🎞":"film-frames","🎥":"movie-camera","📱":"mobile-phone","💻":"laptop","💡":"light-bulb","📚":"books","📖":"open-book","✏":"pencil","📝":"memo","📌":"pushpin","📍":"round-pushpin","📎":"paperclip","✂":"scissors","🔑":"key","🔒":"locked","🔍":"magnifying-glass-tilted-left","🔨":"hammer","⚙":"gear","💣":"bomb","💰":"money-bag","💳":"credit-card","✉":"envelope","📦":"package","📅":"calendar","⏰":"alarm-clock","⏳":"hourglass-not-done","👓":"glasses","🕶":"sunglasses","👕":"t-shirt","🎒":"backpack"};

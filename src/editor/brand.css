@@ -301,3 +301,9 @@ input[type="range"], input[type="checkbox"], input[type="radio"] { accent-color:
 .focus-toggle.on svg { color: #8ab4f8; }
 .focus-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
 .focus-actions .focus-apply { grid-column: 1 / -1; padding: 10px 12px; }
+
+/* íconos dentro de botones con texto */
+.btn-ghost > svg:first-child, .btn-send > svg:first-child { margin-right: 6px; vertical-align: -3px; }
+.focus-actions { grid-template-columns: repeat(3, 1fr); }
+.focus-actions .btn-ghost { padding-left: 6px; padding-right: 6px; font-size: 12px; white-space: nowrap; }
+.focus-actions .btn-ghost:nth-child(4) { grid-column: 1 / -1; }
