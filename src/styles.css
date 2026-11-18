@@ -700,3 +700,20 @@ img, video { display: block; }
 .spin { animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .dupes-tag { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+
+/* panel de herramientas (derecha, contraíble) */
+.tools { flex: none; width: 44px; display: flex; flex-direction: column; gap: 6px; padding: 12px 6px 8px; background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; }
+.tools.open { width: 232px; padding: 12px 12px 8px; }
+.tools-toggle { align-self: flex-end; }
+.tool { display: flex; flex-direction: column; gap: 6px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.tool:last-child { border-bottom: 0; }
+.tool-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px; border: 0; border-radius: 8px; background: transparent; color: inherit; cursor: pointer; font: inherit; font-weight: 600; }
+.tools:not(.open) .tool-head { justify-content: center; }
+.tool-head:hover:not(:disabled) { background: var(--line); }
+.tool-head.on { color: var(--accent, currentColor); }
+.tool-body { display: flex; flex-direction: column; gap: 6px; padding: 0 4px; }
+.tool-hint { margin: 0; color: var(--muted); font-size: 12px; }
+.tool-list { display: flex; flex-wrap: wrap; gap: 4px; }
+.tool-list button, .menu-labels button:not(.dot), .tool-action { padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: inherit; cursor: pointer; font: inherit; font-size: 12px; }
+.tool-list button.on, .menu-labels button.on:not(.dot) { background: var(--line); }
+.tool-action:disabled { opacity: 0.6; cursor: default; }

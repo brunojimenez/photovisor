@@ -1,5 +1,5 @@
 import {
-  ArrowDown, ArrowDownAZ, File, FileArchive, FileAudio, FileCode, FileSpreadsheet, FileText, ArrowUp, ChevronLeft, ChevronRight, ClipboardPaste, Columns2, Copy, FileImage, LoaderCircle, Folder, HardDrive, LayoutGrid,
+  ArrowDown, ArrowDownAZ, File, FileArchive, FileAudio, FileCode, FileSpreadsheet, FileText, ArrowUp, ChevronLeft, ChevronRight, ClipboardPaste, Columns2, Copy, FileImage, LoaderCircle, PanelRightClose, PanelRightOpen, Folder, HardDrive, LayoutGrid,
   Grid2x2, List, ListChecks, ListFilter, Maximize, Monitor, PanelLeftClose, PanelLeftOpen, RectangleHorizontal, Scissors, Star, Trash2,
   Weight, WandSparkles, X, type LucideIcon, type LucideProps,
 } from "lucide-react";
@@ -8,6 +8,7 @@ import {
 const base = { size: 16, strokeWidth: 1.75, "aria-hidden": true } as const;
 
 export const ChevronGlyph = ({ dir }: { dir: "left" | "right" }) => (dir === "left" ? <ChevronLeft {...base} size={28} /> : <ChevronRight {...base} size={28} />);
+export const ToolsGlyph = ({ open }: { open?: boolean }) => (open ? <PanelRightClose {...base} /> : <PanelRightOpen {...base} />);
 export const CopyGlyph = () => <Copy {...base} />;
 /** Ícono que gira: indica que algo está procesando. */
 export const SpinnerGlyph = () => <LoaderCircle {...base} className="spin" />;

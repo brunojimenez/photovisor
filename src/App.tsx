@@ -57,7 +57,7 @@ import { Breadcrumb } from "./Breadcrumb";
 import { Tree } from "./Tree";
 import { Viewer } from "./Viewer";
 import {
-  ChevronGlyph, CloseGlyph, CompareGlyph, CopyGlyph, CutGlyph, SpinnerGlyph, DownGlyph, FilterGlyph, FitGlyph, FolderGlyph, GridGlyph, LargeGlyph, LinesGlyph,
+  ChevronGlyph, CloseGlyph, CompareGlyph, CopyGlyph, CutGlyph, SpinnerGlyph, ToolsGlyph, DownGlyph, FilterGlyph, FitGlyph, FolderGlyph, GridGlyph, LargeGlyph, LinesGlyph,
   FileGlyph, NameGlyph, PanelGlyph, PasteGlyph, RatioGlyph, SelectTypeGlyph, SizeGlyph, StudioGlyph, TrashGlyph, TypeGlyph, UpGlyph,
 } from "./icons";
 
@@ -144,7 +144,14 @@ export default function App() {
   const [meta, setMeta] = useState<Record<string, Meta>>({});
   const [filterRating, setFilterRating] = useState(0);
   const [filterLabel, setFilterLabel] = useState("");
-  const [filterMenu, setFilterMenu] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(() => {
+    try {
+      return localStorage.getItem("pv.tools") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [dupCount, setDupCount] = useState<number | null>(null);
   const currentRef = useRef<string | null>(null);
   const [editorStart, setEditorStart] = useState<{ tool?: "fill"; mode?: "replace" }>({});
   const trail = useRef<string[]>([]);
@@ -497,15 +504,6 @@ export default function App() {
     return () => unlisten?.();
   }, []);
 
-  useEffect(() => {
-    if (!filterMenu) return;
-    const close = (event: globalThis.PointerEvent) => {
-      if (!(event.target as HTMLElement).closest(".filter-anchor")) setFilterMenu(false);
-    };
-    window.addEventListener("pointerdown", close);
-    return () => window.removeEventListener("pointerdown", close);
-  }, [filterMenu]);
-
   const filtering = filterRating > 0 || filterLabel !== "";
   const shown = useMemo(() => {
     const dirs = sortEntries(files.filter((entry) => entry.kind === "dir"), sortKey, sortDir);
@@ -594,10 +592,25 @@ export default function App() {
     nextDupGroup();
   }
 
+  useEffect(() => {
+    setDupCount(null);
+  }, [current]);
+
+  function toggleTools() {
+    setToolsOpen((value) => {
+      try {
+        localStorage.setItem("pv.tools", value ? "0" : "1");
+      } catch {
+        /* sin almacenamiento: queda solo en esta sesión */
+      }
+      return !value;
+    });
+  }
+
   async function scanDuplicates() {
     if (!current || dupBusy) return;
     setDupBusy(true);
-    setToast("Buscando fotos parecidas…");
+    setDupCount(null);
     try {
       const groups = await findSimilar(current);
       // Marcadas = las que van a la papelera. Si el grupo mezcla nombres con "(N)" y sin él, se marcan las que
@@ -615,9 +628,8 @@ export default function App() {
       }
       setDupPick(pick);
       setDupIdx(0);
+      setDupCount(groups.length);
       setDupes(groups);
-      if (groups.length === 0) setToast("No encontré fotos duplicadas ni muy parecidas en esta carpeta.");
-      else setToast(null);
     } catch (error) {
       setToast(String(error));
     } finally {
@@ -1417,7 +1429,6 @@ export default function App() {
                   <button className="del" title="Enviar a la papelera (Supr)" aria-label="Eliminar" disabled={busy || !current || current === COMPUTER || targets().length === 0} onClick={() => void remove(false, targets())}><TrashGlyph /></button>
                 </div>
                 <div className="seg" role="group" aria-label="Selección">
-                  <button title="Comparar dos fotos" aria-label="Comparar" onClick={openCompare}><CompareGlyph /></button>
                   <div className="menu-anchor">
                     <button className={typeMenu ? "on" : ""} title="Seleccionar por tipo" aria-label="Seleccionar por tipo" onClick={() => setTypeMenu((value) => !value)}><SelectTypeGlyph /></button>
                     {typeMenu && (
@@ -1437,49 +1448,12 @@ export default function App() {
                     </button>
                   </div>
                 )}
-                <div className="seg filter-anchor menu-anchor" role="group" aria-label="Filtro">
-                  <button className={filtering || filterMenu ? "on" : ""} title="Filtrar por estrellas o etiqueta" aria-label="Filtrar" onClick={() => setFilterMenu((value) => !value)}>
-                    <FilterGlyph />
-                  </button>
-                  {filterMenu && (
-                    <div className="menu filter-menu" role="menu">
-                      <p className="menu-title">Valoración mínima</p>
-                      {[0, 1, 2, 3, 4, 5].map((n) => (
-                        <button key={n} className={filterRating === n ? "on" : ""} onClick={() => setFilterRating(n)}>
-                          {n === 0 ? "Todas" : `${"★".repeat(n)} o más`}
-                        </button>
-                      ))}
-                      <p className="menu-title">Etiqueta</p>
-                      <div className="menu-labels">
-                        <button className={filterLabel === "" ? "on" : ""} onClick={() => setFilterLabel("")}>Todas</button>
-                        {LABELS.map((item) => (
-                          <button
-                            key={item.id}
-                            className={`dot ${filterLabel === item.id ? "on" : ""}`}
-                            style={{ background: item.color }}
-                            title={item.name}
-                            aria-label={item.name}
-                            onClick={() => setFilterLabel(filterLabel === item.id ? "" : item.id)}
-                          />
-                        ))}
-                      </div>
-                      {filtering && (
-                        <button onClick={() => { setFilterRating(0); setFilterLabel(""); }}>Quitar filtros</button>
-                      )}
-                    </div>
-                  )}
-                </div>
                 <div className="seg" role="group" aria-label="Orden">
                   <button className={sortKey === "name" ? "on" : ""} title={sortKey === "name" && sortDir === "desc" ? "Nombre, descendente" : "Nombre, ascendente"} aria-label="Ordenar por nombre" onClick={() => toggleSort("name")}><NameGlyph /></button>
                   <button className={sortKey === "type" ? "on" : ""} title={sortKey === "type" && sortDir === "desc" ? "Tipo, descendente" : "Tipo, ascendente"} aria-label="Ordenar por tipo" onClick={() => toggleSort("type")}><TypeGlyph /></button>
                   <button className={sortKey === "size" ? "on" : ""} title={sortKey === "size" && sortDir === "desc" ? "Peso, descendente" : "Peso, ascendente"} aria-label="Ordenar por peso" onClick={() => toggleSort("size")}><SizeGlyph /></button>
                   <button title={sortDir === "asc" ? "Ascendente" : "Descendente"} aria-label={sortDir === "asc" ? "Ascendente" : "Descendente"} onClick={() => setSortDir((dir) => (dir === "asc" ? "desc" : "asc"))}>
                     {sortDir === "asc" ? <UpGlyph /> : <DownGlyph />}
-                  </button>
-                </div>
-                <div className="seg" role="group" aria-label="Duplicados">
-                  <button title={dupBusy ? "Buscando fotos parecidas…" : "Buscar fotos duplicadas o parecidas en esta carpeta"} aria-label="Buscar duplicados" disabled={dupBusy || !current} onClick={() => void scanDuplicates()}>
-                    {dupBusy ? <SpinnerGlyph /> : <CopyGlyph />}
                   </button>
                 </div>
               </div>
@@ -1561,6 +1535,82 @@ export default function App() {
           </>
         )}
       </main>
+      {root && (
+        <aside className={`tools ${toolsOpen ? "open" : ""}`} aria-label="Herramientas">
+          <button className="icon-btn tools-toggle" title={toolsOpen ? "Ocultar herramientas" : "Mostrar herramientas"} aria-label={toolsOpen ? "Ocultar herramientas" : "Mostrar herramientas"} onClick={toggleTools}>
+            <ToolsGlyph open={toolsOpen} />
+          </button>
+          <section className="tool">
+            <button className={`tool-head ${filtering ? "on" : ""}`} title="Filtrar por estrellas o etiqueta" onClick={() => !toolsOpen && toggleTools()}>
+              <FilterGlyph />
+              {toolsOpen && <span>Filtrar</span>}
+            </button>
+            {toolsOpen && (
+              <div className="tool-body">
+                <p className="menu-title">Valoración mínima</p>
+                <div className="tool-list">
+                  {[0, 1, 2, 3, 4, 5].map((n) => (
+                    <button key={n} className={filterRating === n ? "on" : ""} onClick={() => setFilterRating(n)}>
+                      {n === 0 ? "Todas" : `${"★".repeat(n)} o más`}
+                    </button>
+                  ))}
+                </div>
+                <p className="menu-title">Etiqueta</p>
+                <div className="menu-labels">
+                  <button className={filterLabel === "" ? "on" : ""} onClick={() => setFilterLabel("")}>Todas</button>
+                  {LABELS.map((item) => (
+                    <button
+                      key={item.id}
+                      className={`dot ${filterLabel === item.id ? "on" : ""}`}
+                      style={{ background: item.color }}
+                      title={item.name}
+                      aria-label={item.name}
+                      onClick={() => setFilterLabel(filterLabel === item.id ? "" : item.id)}
+                    />
+                  ))}
+                </div>
+                {filtering && (
+                  <button className="tool-action" onClick={() => { setFilterRating(0); setFilterLabel(""); }}>Quitar filtros</button>
+                )}
+              </div>
+            )}
+          </section>
+          <section className="tool">
+            <button className="tool-head" title="Comparar dos fotos" onClick={() => (toolsOpen ? openCompare() : toggleTools())}>
+              <CompareGlyph />
+              {toolsOpen && <span>Comparar</span>}
+            </button>
+            {toolsOpen && (
+              <div className="tool-body">
+                <p className="tool-hint">Elige dos fotos de la carpeta y míralas lado a lado.</p>
+                <button className="tool-action" onClick={openCompare}>Comparar dos fotos</button>
+              </div>
+            )}
+          </section>
+          <section className="tool">
+            <button className="tool-head" title="Buscar fotos duplicadas o parecidas en esta carpeta" disabled={dupBusy} onClick={() => (toolsOpen ? void scanDuplicates() : toggleTools())}>
+              {dupBusy ? <SpinnerGlyph /> : <CopyGlyph />}
+              {toolsOpen && <span>Duplicados</span>}
+            </button>
+            {toolsOpen && (
+              <div className="tool-body">
+                <p className="tool-hint">
+                  {dupBusy
+                    ? "Buscando fotos parecidas…"
+                    : dupCount === null
+                      ? "Busca copias y fotos casi iguales en esta carpeta."
+                      : dupCount === 0
+                        ? "No encontré duplicados en esta carpeta."
+                        : `${dupCount} grupo${dupCount === 1 ? "" : "s"} encontrado${dupCount === 1 ? "" : "s"}.`}
+                </p>
+                <button className="tool-action" disabled={dupBusy || !current} onClick={() => void scanDuplicates()}>
+                  {dupBusy ? "Buscando…" : dupCount === null ? "Buscar duplicados" : "Buscar de nuevo"}
+                </button>
+              </div>
+            )}
+          </section>
+        </aside>
+      )}
       {viewer && focused && isMedia(focused) && (
         <Viewer
           file={focused}
