@@ -189,3 +189,13 @@ export function stripGps(paths: string[]) {
 export function findSimilar(folder: string, maxDist?: number) {
   return invoke<string[][]>("find_similar", { folder, maxDist });
 }
+
+/** Fotos que se pueden marcar en lote en una carpeta (sin GIF ni video). */
+export function batchImages(folder: string, recursive: boolean) {
+  return invoke<string[]>("batch_images", { folder, recursive });
+}
+
+/** Guarda una foto con marca en la subcarpeta «con-marca» junto al original. */
+export function saveMarked(source: string, dataB64: string, format: "png" | "jpeg" | "webp" | "avif") {
+  return invoke<string>("save_marked", { source, dataB64, format });
+}

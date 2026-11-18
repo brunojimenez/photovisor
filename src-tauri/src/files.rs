@@ -804,6 +804,71 @@ fn restore_exif(dest: &Path, mut meta: Metadata) {
     }));
 }
 
+/// Carpeta donde salen las fotos con marca: se crea dentro de la carpeta de cada foto.
+pub const MARK_DIR: &str = "con-marca";
+
+/// Fotos de una carpeta que se pueden marcar (sin GIF ni video). Con `recursive` entra a las subcarpetas.
+/// Nunca mira dentro de las carpetas de salida «con-marca», para no marcar dos veces lo ya marcado.
+pub fn markable_images(folder: &Path, recursive: bool) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut pending = vec![folder.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        let Ok(read) = fs::read_dir(&dir) else { continue };
+        for entry in read.flatten() {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            if skip_name(&name) {
+                continue;
+            }
+            if path.is_dir() {
+                if recursive && !name.eq_ignore_ascii_case(MARK_DIR) {
+                    pending.push(path);
+                }
+            } else if kind_of(&path) == Some("image") && extension(&path) != "gif" {
+                out.push(path);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// Guarda una foto con marca en la subcarpeta «con-marca» junto al original, sin pisar nada:
+/// si el nombre ya existe agrega -2, -3… Conserva el EXIF del original.
+pub fn save_marked(root: &Path, source: &Path, bytes: &[u8]) -> Result<PathBuf, String> {
+    let source = ensure_inside(root, source)?;
+    let parent = source.parent().ok_or("el archivo no tiene carpeta")?;
+    let dir = parent.join(MARK_DIR);
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let stem = source.file_stem().unwrap_or_default().to_string_lossy().to_string();
+    let jpeg = bytes.starts_with(&[0xFF, 0xD8]);
+    let webp = bytes.len() > 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP";
+    let avif = bytes.len() > 12 && &bytes[4..8] == b"ftyp" && matches!(&bytes[8..12], b"avif" | b"avis");
+    let ext = if jpeg {
+        if extension(&source) == "jpeg" { "jpeg" } else { "jpg" }
+    } else if webp {
+        "webp"
+    } else if avif {
+        "avif"
+    } else {
+        "png"
+    };
+    let mut dest = dir.join(format!("{stem}.{ext}"));
+    let mut n = 2u32;
+    while dest.exists() {
+        dest = dir.join(format!("{stem}-{n}.{ext}"));
+        n += 1;
+    }
+    let exif = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| Metadata::new_from_path(&source).ok()))
+        .ok()
+        .flatten();
+    fs::write(&dest, bytes).map_err(|e| e.to_string())?;
+    if let Some(meta) = exif {
+        restore_exif(&dest, meta);
+    }
+    Ok(dest)
+}
+
 pub fn rename_entry(root: &Path, path: &Path, new_name: &str) -> Result<PathBuf, String> {
     let path = ensure_inside(root, path)?;
     let mut name = new_name.trim().to_string();
@@ -937,5 +1002,36 @@ mod save_tests {
         let out = save_image(&dir, &png, &[0x89, b'P', b'N', b'G', 1, 2, 3], "copy").unwrap();
         assert_eq!(out.file_name().unwrap(), "otra-edit.png");
         let _ = fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod mark_tests {
+    use super::*;
+
+    #[test]
+    fn marcar_en_lote_lista_y_guarda_sin_pisar() {
+        let base = std::env::temp_dir().join(format!("pv-mark-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(base.join("sub")).unwrap();
+        fs::create_dir_all(base.join(MARK_DIR)).unwrap();
+        for name in ["a.png", "sub/b.jpg", "anim.gif", "con-marca/ya.png", "nota.txt"] {
+            fs::write(base.join(name), b"x").unwrap();
+        }
+        assert_eq!(markable_images(&base, false).len(), 1, "solo a.png en la carpeta");
+        assert_eq!(markable_images(&base, true).len(), 2, "a.png y sub/b.jpg; no el GIF ni lo ya marcado");
+
+        let mut png = Vec::new();
+        DynamicImage::ImageRgb8(image::RgbImage::new(2, 2))
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        let src = base.join("a.png");
+        let first = save_marked(&base, &src, &png).unwrap();
+        let second = save_marked(&base, &src, &png).unwrap();
+        assert_eq!(first.file_name().unwrap().to_string_lossy(), "a.png");
+        assert_eq!(first.parent().unwrap().file_name().unwrap().to_string_lossy(), MARK_DIR);
+        assert!(second.to_string_lossy().ends_with("a-2.png"));
+        assert_eq!(fs::read(&src).unwrap(), b"x", "el original no se toca");
+        let _ = fs::remove_dir_all(&base);
     }
 }

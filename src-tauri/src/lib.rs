@@ -467,6 +467,47 @@ async fn save_edit(
     Ok(saved)
 }
 
+/// Fotos de una carpeta que se pueden marcar en lote (sin GIF ni video), con o sin subcarpetas.
+#[tauri::command]
+async fn batch_images(state: tauri::State<'_, AppState>, folder: String, recursive: bool) -> Result<Vec<String>, String> {
+    let root = root_of(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = files::ensure_inside(&root, Path::new(&folder))?;
+        Ok(files::markable_images(&dir, recursive).iter().map(|p| files::nice_path(p)).collect())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Guarda una foto con marca en la subcarpeta «con-marca», junto al original. Nunca pisa el original.
+#[tauri::command]
+async fn save_marked(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    source: String,
+    data_b64: String,
+    format: Option<String>,
+) -> Result<String, String> {
+    let root = root_of(&state)?;
+    let cfg = config::load(&app);
+    let bytes = STANDARD
+        .decode(data_b64.trim())
+        .map_err(|_| "la imagen no se pudo leer".to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let bytes = match format.as_deref() {
+            Some("jpeg") => codec::encode_jpeg(&bytes, cfg.jpeg_quality.clamp(50, 100) as f32)?,
+            Some("png") => codec::optimize_png(&bytes),
+            Some("webp") => extras::encode_webp(&bytes, cfg.webp_quality.clamp(30, 100) as f32)?,
+            Some("avif") => extras::encode_avif(&bytes, cfg.avif_quality.clamp(30, 100))?,
+            _ => bytes,
+        };
+        let dest = files::save_marked(&root, Path::new(&source), &bytes)?;
+        Ok::<String, String>(files::nice_path(&dest))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 async fn suggest_tilt(state: tauri::State<'_, AppState>, path: String) -> Result<Option<f32>, String> {
     let root = root_of(&state)?;
@@ -671,6 +712,8 @@ pub fn run() {
             open_repo,
             open_external,
             save_edit,
+            batch_images,
+            save_marked,
             suggest_tilt,
             catalog_folder,
             catalog_set,

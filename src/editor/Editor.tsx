@@ -266,7 +266,7 @@ function wmNum(v: unknown, fallback: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, n));
 }
 
-function loadWm(): Watermark {
+export function loadWm(): Watermark {
   try {
     const raw = localStorage.getItem("editor.wm");
     if (!raw) return WM_DEFAULT;
@@ -562,7 +562,6 @@ export default function Editor({
   cropRatioRef.current = cropRatio;
   piecesRef.current = pieces;
   clonePickRef.current = clonePick;
-  const wmFileRef = useRef<HTMLInputElement | null>(null);
   wmRef.current = wm;
   const choicesRef = useRef(choices);
   choicesRef.current = choices;
@@ -1150,12 +1149,6 @@ export default function Editor({
   }
 
   useEffect(() => onFluentReady(() => setPaintTick((n) => n + 1)), []);
-
-  /** Marca de agua: un emoji o ícono de líneas pasa a ser el sello; un carácter de trazo se suma a la frase. */
-  function pickWmIcon(ch: string) {
-    if (ch.startsWith("fe:") || lucideNode(ch)) setWm((w) => ({ ...w, on: true, mode: "icon", icon: ch }));
-    else setWm((w) => ({ ...w, on: true, mode: "text", text: (w.text + ch).slice(0, 80) }));
-  }
 
   /** Texto: un carácter de trazo se suma a la frase; un emoji o ícono de líneas se coloca desde la herramienta de íconos. */
   function pickNoteIcon(ch: string) {
@@ -3062,126 +3055,7 @@ export default function Editor({
               </>
             ) : tool === "wm" ? (
               <>
-                <Card title="Marca de agua">
-<label className="editor-pin">
-                  <input
-                    type="checkbox"
-                    checked={wm.on}
-                    onChange={(e) => setWm((w) => ({ ...w, on: e.target.checked }))}
-                  />
-                  ver en la foto y al guardar
-                </label>
-                <div className="editor-seg">
-                  <button
-                    type="button"
-                    className={wm.mode === "text" ? "on" : ""}
-                    onClick={() => setWm((w) => ({ ...w, mode: "text", on: true }))}
-                  >
-                    Texto
-                  </button>
-                  <button
-                    type="button"
-                    className={wm.mode === "icon" ? "on" : ""}
-                    onClick={() => setWm((w) => ({ ...w, mode: "icon", on: true }))}
-                  >
-                    Ícono
-                  </button>
-                  <button
-                    type="button"
-                    className={wm.mode === "image" ? "on" : ""}
-                    onClick={() => setWm((w) => ({ ...w, mode: "image", on: true }))}
-                  >
-                    Imagen
-                  </button>
-                </div>
-                {wm.mode === "text" ? (
-                  <>
-                    <input
-                      className="editor-wm-text"
-                      value={wm.text}
-                      maxLength={80}
-                      placeholder="🔥TuMarca"
-                      onChange={(e) => setWm((w) => ({ ...w, on: true, text: e.target.value }))}
-                    />
-                <select
-                  className="editor-font" title="Fuente" aria-label="Fuente"
-                  value={wmFont(wm.font)}
-                  onChange={(e) => setWm((w) => ({ ...w, font: e.target.value }))}
-                >
-                  {installedFonts().map((font) => (
-                    <option key={font} value={font} style={{ fontFamily: `"${font}"` }}>{font}</option>
-                  ))}
-                </select>
-                                      </>
-                ) : wm.mode === "icon" ? (
-                  <p className="hint">Elige un emoji o un ícono de líneas abajo: se usa como sello, con el tamaño, giro, opacidad y mosaico de más abajo.</p>
-                ) : (
-                  <>
-                    <button type="button" className="btn-ghost editor-wm-file" onClick={() => wmFileRef.current?.click()}>
-                      {wmFileName || "Elegir PNG o imagen"}
-                    </button>
-                    <input
-                      ref={wmFileRef}
-                      type="file"
-                      accept="image/png,image/webp,image/jpeg,image/gif"
-                      hidden
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        e.target.value = "";
-                        if (file) pickWmImage(file);
-                      }}
-                    />
-                    <p className="hint">PNG con transparencia. El lugar de abajo vale igual para la imagen.</p>
-                  </>
-                )}
-                </Card>
-                {(wm.mode === "text" || wm.mode === "icon") && (
-                  <>
-                    <IconBrowser
-                      isOn={(ch) => wm.mode === "icon" && wm.icon === ch}
-                      onPick={pickWmIcon}
-                      ink={{ look: wm.look ?? "solid", c1: wm.color, c2: wm.color2 ?? "#ff4fa3", palette: wm.palette ?? "rainbow" }}
-                    />
-                    <p className="hint">
-                      {wm.mode === "icon"
-                        ? "Los emojis conservan sus colores; el color y estilo de abajo vale para los íconos de líneas."
-                        : "Trazo se agrega a la frase. Un emoji o un ícono de líneas pasa a modo Ícono y queda como sello."}
-                    </p>
-                    <Card title="Color y estilo">
-                      <LookPicker
-                        look={wm.look ?? "solid"}
-                        color={wm.color}
-                        color2={wm.color2 ?? "#ff4fa3"}
-                        palette={wm.palette ?? "rainbow"}
-                        onChange={(patch) => setWm((w) => ({ ...w, ...patch }))}
-                      />
-                    </Card>
-                  </>
-                )}
-                <Card title="Posición">
-                <div className="editor-seg">
-                  {WM_PLACES.map(([id, label, tip]) => (
-                    <button
-                      key={id}
-                      type="button"
-                      className={wm.place === id ? "on" : ""}
-                      title={tip}
-                      onClick={() => setWm((w) => ({ ...w, place: id, on: true }))}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <OptRow label="Opacidad" value={wm.opacity} min={8} max={92} def={WM_DEFAULT.opacity} onChange={(n) => setWm((w) => ({ ...w, opacity: n }))} />
-                <OptRow label="Ángulo" value={wm.angle} min={-75} max={75} def={WM_DEFAULT.angle} onChange={(n) => setWm((w) => ({ ...w, angle: n }))} />
-                <OptRow label="Tamaño" value={wm.size} min={10} max={80} def={WM_DEFAULT.size} onChange={(n) => setWm((w) => ({ ...w, size: n }))} />
-                {wm.place === "tile" && (
-                  <OptRow label="Separación" value={wm.gap} min={0} max={100} def={WM_DEFAULT.gap} onChange={(n) => setWm((w) => ({ ...w, gap: n }))} />
-                )}
-                {wm.mode === "text" && (
-                  <OptRow label="Sombra" value={wm.shade} min={0} max={100} def={WM_DEFAULT.shade} onChange={(n) => setWm((w) => ({ ...w, shade: n }))} />
-                )}
-                </Card>
+                <WatermarkDesigner wm={wm} setWm={setWm} fileName={wmFileName} onPickImage={pickWmImage} />
                 <p className="hint">
                   No entra al trabajo de IA. Solo al PNG que guardás. Espacio muestra la foto sin marca.
                 </p>
@@ -3956,6 +3830,148 @@ function StickSwatches(props: { label: string; value: string; onPick: (hex: stri
       ))}
       <input type="color" className="stick-color-input" value={props.value} title="Otro color" aria-label="Otro color" onChange={(event) => props.onPick(event.target.value)} />
     </div>
+  );
+}
+
+/** Diseñador de la marca de agua (texto, ícono o imagen, con su color, estilo y posición). Lo usan el editor y la marca en lote. */
+export function WatermarkDesigner(props: {
+  wm: Watermark;
+  setWm: (update: (w: Watermark) => Watermark) => void;
+  fileName: string;
+  onPickImage: (file: File) => void;
+}) {
+  const { wm, setWm } = props;
+  const wmFileRef = useRef<HTMLInputElement | null>(null);
+
+  /** Un emoji o ícono de líneas pasa a ser el sello; un carácter de trazo se suma a la frase. */
+  function pickWmIcon(ch: string) {
+    if (ch.startsWith("fe:") || lucideNode(ch)) setWm((w) => ({ ...w, on: true, mode: "icon", icon: ch }));
+    else setWm((w) => ({ ...w, on: true, mode: "text", text: (w.text + ch).slice(0, 80) }));
+  }
+
+  return (
+    <>
+                <Card title="Marca de agua">
+<label className="editor-pin">
+                  <input
+                    type="checkbox"
+                    checked={wm.on}
+                    onChange={(e) => setWm((w) => ({ ...w, on: e.target.checked }))}
+                  />
+                  ver en la foto y al guardar
+                </label>
+                <div className="editor-seg">
+                  <button
+                    type="button"
+                    className={wm.mode === "text" ? "on" : ""}
+                    onClick={() => setWm((w) => ({ ...w, mode: "text", on: true }))}
+                  >
+                    Texto
+                  </button>
+                  <button
+                    type="button"
+                    className={wm.mode === "icon" ? "on" : ""}
+                    onClick={() => setWm((w) => ({ ...w, mode: "icon", on: true }))}
+                  >
+                    Ícono
+                  </button>
+                  <button
+                    type="button"
+                    className={wm.mode === "image" ? "on" : ""}
+                    onClick={() => setWm((w) => ({ ...w, mode: "image", on: true }))}
+                  >
+                    Imagen
+                  </button>
+                </div>
+                {wm.mode === "text" ? (
+                  <>
+                    <input
+                      className="editor-wm-text"
+                      value={wm.text}
+                      maxLength={80}
+                      placeholder="🔥TuMarca"
+                      onChange={(e) => setWm((w) => ({ ...w, on: true, text: e.target.value }))}
+                    />
+                <select
+                  className="editor-font" title="Fuente" aria-label="Fuente"
+                  value={wmFont(wm.font)}
+                  onChange={(e) => setWm((w) => ({ ...w, font: e.target.value }))}
+                >
+                  {installedFonts().map((font) => (
+                    <option key={font} value={font} style={{ fontFamily: `"${font}"` }}>{font}</option>
+                  ))}
+                </select>
+                                      </>
+                ) : wm.mode === "icon" ? (
+                  <p className="hint">Elige un emoji o un ícono de líneas abajo: se usa como sello, con el tamaño, giro, opacidad y mosaico de más abajo.</p>
+                ) : (
+                  <>
+                    <button type="button" className="btn-ghost editor-wm-file" onClick={() => wmFileRef.current?.click()}>
+                      {props.fileName || "Elegir PNG o imagen"}
+                    </button>
+                    <input
+                      ref={wmFileRef}
+                      type="file"
+                      accept="image/png,image/webp,image/jpeg,image/gif"
+                      hidden
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        if (file) props.onPickImage(file);
+                      }}
+                    />
+                    <p className="hint">PNG con transparencia. El lugar de abajo vale igual para la imagen.</p>
+                  </>
+                )}
+                </Card>
+                {(wm.mode === "text" || wm.mode === "icon") && (
+                  <>
+                    <IconBrowser
+                      isOn={(ch) => wm.mode === "icon" && wm.icon === ch}
+                      onPick={pickWmIcon}
+                      ink={{ look: wm.look ?? "solid", c1: wm.color, c2: wm.color2 ?? "#ff4fa3", palette: wm.palette ?? "rainbow" }}
+                    />
+                    <p className="hint">
+                      {wm.mode === "icon"
+                        ? "Los emojis conservan sus colores; el color y estilo de abajo vale para los íconos de líneas."
+                        : "Trazo se agrega a la frase. Un emoji o un ícono de líneas pasa a modo Ícono y queda como sello."}
+                    </p>
+                    <Card title="Color y estilo">
+                      <LookPicker
+                        look={wm.look ?? "solid"}
+                        color={wm.color}
+                        color2={wm.color2 ?? "#ff4fa3"}
+                        palette={wm.palette ?? "rainbow"}
+                        onChange={(patch) => setWm((w) => ({ ...w, ...patch }))}
+                      />
+                    </Card>
+                  </>
+                )}
+                <Card title="Posición">
+                <div className="editor-seg">
+                  {WM_PLACES.map(([id, label, tip]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      className={wm.place === id ? "on" : ""}
+                      title={tip}
+                      onClick={() => setWm((w) => ({ ...w, place: id, on: true }))}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <OptRow label="Opacidad" value={wm.opacity} min={8} max={92} def={WM_DEFAULT.opacity} onChange={(n) => setWm((w) => ({ ...w, opacity: n }))} />
+                <OptRow label="Ángulo" value={wm.angle} min={-75} max={75} def={WM_DEFAULT.angle} onChange={(n) => setWm((w) => ({ ...w, angle: n }))} />
+                <OptRow label="Tamaño" value={wm.size} min={10} max={80} def={WM_DEFAULT.size} onChange={(n) => setWm((w) => ({ ...w, size: n }))} />
+                {wm.place === "tile" && (
+                  <OptRow label="Separación" value={wm.gap} min={0} max={100} def={WM_DEFAULT.gap} onChange={(n) => setWm((w) => ({ ...w, gap: n }))} />
+                )}
+                {wm.mode === "text" && (
+                  <OptRow label="Sombra" value={wm.shade} min={0} max={100} def={WM_DEFAULT.shade} onChange={(n) => setWm((w) => ({ ...w, shade: n }))} />
+                )}
+                </Card>
+    </>
   );
 }
 

@@ -745,3 +745,18 @@ img, video { display: block; }
 .dialog .about-note { margin: 0; font-size: 12px; color: var(--muted); }
 .app-icon { flex: none; border-radius: 16px; }
 .about-link { margin-top: 6px; padding: 0; border: 0; background: none; color: var(--accent, #c084fc); font-size: 12px; text-decoration: underline; cursor: pointer; }
+
+/* marca de agua en lote */
+.dialog.batch { width: min(900px, calc(100% - 32px)); max-height: calc(100% - 48px); display: flex; flex-direction: column; }
+.batch-note { margin: 0 0 12px !important; font-size: 13px; }
+.batch-body { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; min-height: 0; flex: 1; overflow: hidden; margin-bottom: 14px; }
+.batch-design { overflow-y: auto; padding-right: 6px; max-height: 60vh; }
+.batch-side { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; max-height: 60vh; }
+.batch-preview { width: 100%; height: auto; border-radius: 10px; background: #0b0a11; border: 1px solid var(--line); }
+.batch-scope { display: grid; gap: 6px; border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin: 0; }
+.dialog .batch-scope label { display: flex; gap: 8px; align-items: center; margin: 0; }
+.dialog .batch-sub { margin-left: 22px; color: var(--muted); }
+.batch-progress { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.batch-progress progress { width: 100%; }
+.batch-error { margin: 0 !important; color: #ff6b6b !important; font-size: 13px; }
+@media (max-width: 760px) { .batch-body { grid-template-columns: 1fr; } }

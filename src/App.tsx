@@ -3,6 +3,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { ask, open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { BatchMark } from "./BatchMark";
 import Editor from "./editor/Editor";
 import {
   deletePermanent,
@@ -59,7 +60,7 @@ import { Breadcrumb } from "./Breadcrumb";
 import { Tree } from "./Tree";
 import { Viewer } from "./Viewer";
 import {
-  ChevronGlyph, CloseGlyph, CompareGlyph, CopyGlyph, CutGlyph, EditGlyph, SettingsGlyph, SpinnerGlyph, ToolsGlyph, DownGlyph, FilterGlyph, FitGlyph, FolderGlyph, GridGlyph, LargeGlyph, LinesGlyph,
+  ChevronGlyph, CloseGlyph, CompareGlyph, CopyGlyph, CutGlyph, EditGlyph, SettingsGlyph, StampGlyph, SpinnerGlyph, ToolsGlyph, DownGlyph, FilterGlyph, FitGlyph, FolderGlyph, GridGlyph, LargeGlyph, LinesGlyph,
   FileGlyph, NameGlyph, PanelGlyph, PasteGlyph, RatioGlyph, SelectTypeGlyph, SizeGlyph, StudioGlyph, TrashGlyph, TypeGlyph, UpGlyph,
 } from "./icons";
 
@@ -159,6 +160,7 @@ export default function App() {
   });
   const [dupCount, setDupCount] = useState<number | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [batchOpen, setBatchOpen] = useState(false);
   const [appVersion, setAppVersion] = useState("");
   useEffect(() => {
     void getVersion().then(setAppVersion).catch(() => undefined);
@@ -1634,6 +1636,18 @@ export default function App() {
               </div>
             )}
           </section>
+          <section className="tool">
+            <button className="tool-head" title="Poner una marca de agua a varias fotos o a toda la carpeta" disabled={!current || current === COMPUTER} onClick={() => (toolsOpen ? setBatchOpen(true) : toggleTools())}>
+              <StampGlyph />
+              {toolsOpen && <span>Marca en lote</span>}
+            </button>
+            {toolsOpen && (
+              <div className="tool-body">
+                <p className="tool-hint">Aplica una marca de agua a las fotos seleccionadas o a toda la carpeta. Las copias salen en «con-marca».</p>
+                <button className="tool-action" disabled={!current || current === COMPUTER} onClick={() => setBatchOpen(true)}>Marcar en lote…</button>
+              </div>
+            )}
+          </section>
         </aside>
       )}
       {viewer && focused && isMedia(focused) && (
@@ -1689,6 +1703,21 @@ export default function App() {
             ))}
           </div>
         </div>
+      )}
+      {batchOpen && current && (
+        <BatchMark
+          current={current}
+          files={files}
+          selected={selected}
+          onClose={() => setBatchOpen(false)}
+          onDone={(summary) => {
+            setToast(summary);
+            void listDir(current).then((view) => {
+              rememberDirs(view);
+              setFiles(view.entries);
+            });
+          }}
+        />
       )}
       {settingsOpen && (
         <div className="scrim" onPointerDown={(event) => event.target === event.currentTarget && setSettingsOpen(false)}>
