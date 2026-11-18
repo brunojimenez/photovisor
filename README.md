@@ -1,4 +1,6 @@
-# PhotoVisor
+<p align="center">
+  <img src="docs/banner.png" alt="PhotoVisor: mira, ordena y edita tus fotos" width="100%">
+</p>
 
 Programa de Windows para mirar, ordenar y editar las fotos y videos de una carpeta. Todo queda en tu PC: sin cuenta y sin subir archivos.
 
