@@ -194,8 +194,52 @@ fn hamming(a: &[u8], b: &[u8]) -> u32 {
     a.iter().zip(b).map(|(x, y)| (x ^ y).count_ones()).sum()
 }
 
+/// Nombre sin extensión y sin el sufijo que Windows agrega al chocar: "foto (2)", "foto - copia".
+pub fn base_stem(name: &str) -> String {
+    let stem = match name.rfind('.') {
+        Some(i) if i > 0 => &name[..i],
+        _ => name,
+    };
+    let mut s = stem.trim().to_lowercase();
+    loop {
+        let before = s.len();
+        if s.ends_with(')') {
+            if let Some(open) = s.rfind('(') {
+                let inside = &s[open + 1..s.len() - 1];
+                if !inside.is_empty() && inside.chars().all(|c| c.is_ascii_digit()) {
+                    s.truncate(open);
+                    s = s.trim_end().to_string();
+                }
+            }
+        }
+        for suffix in [" - copia", " - copy", " copia", " copy"] {
+            if let Some(rest) = s.strip_suffix(suffix) {
+                s = rest.trim_end().to_string();
+            }
+        }
+        if s.len() == before {
+            break;
+        }
+    }
+    s
+}
+
+#[allow(dead_code)]
+/// El nombre trae el sufijo "(N)" o "- copia": señal de que chocó con otro archivo y puede ser una copia.
+pub fn looks_like_copy(name: &str) -> bool {
+    let stem = match name.rfind('.') {
+        Some(i) if i > 0 => &name[..i],
+        _ => name,
+    };
+    base_stem(name) != stem.trim().to_lowercase()
+}
+
+/// Con el mismo nombre base (salvo el sufijo) basta una distancia más floja: ya hay otra pista de copia.
+pub const NAME_DIST: u32 = 12;
+
 /// Agrupa las huellas parecidas (distancia ≤ `max_dist` de 64 bits). Cada grupo trae 2 o más índices.
-pub fn group_similar(hashes: &[Option<Vec<u8>>], max_dist: u32) -> Vec<Vec<usize>> {
+pub fn group_similar(hashes: &[Option<Vec<u8>>], names: &[String], max_dist: u32) -> Vec<Vec<usize>> {
+    let stems: Vec<String> = names.iter().map(|n| base_stem(n)).collect();
     let n = hashes.len();
     let mut parent: Vec<usize> = (0..n).collect();
     fn find(parent: &mut [usize], mut i: usize) -> usize {
@@ -209,7 +253,8 @@ pub fn group_similar(hashes: &[Option<Vec<u8>>], max_dist: u32) -> Vec<Vec<usize
         let Some(a) = &hashes[i] else { continue };
         for j in (i + 1)..n {
             let Some(b) = &hashes[j] else { continue };
-            if hamming(a, b) <= max_dist {
+            let limit = if !stems[i].is_empty() && stems[i] == stems[j] { max_dist.max(NAME_DIST) } else { max_dist };
+            if hamming(a, b) <= limit {
                 let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
                 if ri != rj {
                     parent[rj] = ri;
@@ -260,8 +305,29 @@ mod tests {
         let mut b = vec![0u8; 8];
         b[0] = 0b0000_0011; // 2 bits de diferencia
         let c = vec![0xFFu8; 8];
-        let groups = group_similar(&[Some(a), Some(b), Some(c), None], 5);
+        let names: Vec<String> = ["a.jpg", "b.jpg", "c.jpg", "d.jpg"].iter().map(|s| s.to_string()).collect();
+        let groups = group_similar(&[Some(a), Some(b), Some(c), None], &names, 5);
         assert_eq!(groups, vec![vec![0, 1]]);
+    }
+
+    #[test]
+    fn el_nombre_con_sufijo_junta_fotos_algo_distintas() {
+        let a = vec![0u8; 8];
+        let mut b = vec![0u8; 8];
+        b[0] = 0xFF; // 8 bits: más que el umbral normal, menos que NAME_DIST
+        let names: Vec<String> = ["IMG_1.jpg", "IMG_1 (2).jpg"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(group_similar(&[Some(a.clone()), Some(b.clone())], &names, 4).len(), 1);
+        let otros: Vec<String> = ["IMG_1.jpg", "IMG_2.jpg"].iter().map(|s| s.to_string()).collect();
+        assert!(group_similar(&[Some(a), Some(b)], &otros, 4).is_empty());
+    }
+
+    #[test]
+    fn reconoce_sufijos_de_copia() {
+        assert_eq!(base_stem("IMG_1 (2).JPG"), "img_1");
+        assert_eq!(base_stem("foto - copia (3).png"), "foto");
+        assert_eq!(base_stem("viaje (2024).jpg"), "viaje");
+        assert!(looks_like_copy("IMG_1 (2).jpg"));
+        assert!(!looks_like_copy("IMG_1.jpg"));
     }
 
     #[test]

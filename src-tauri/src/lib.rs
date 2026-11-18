@@ -314,7 +314,11 @@ async fn find_similar(state: tauri::State<'_, AppState>, folder: String, max_dis
             .collect();
         paths.sort();
         let hashes = extras::fingerprints(&paths);
-        let groups = extras::group_similar(&hashes, max_dist.unwrap_or(4).min(16));
+        let names: Vec<String> = paths
+            .iter()
+            .map(|p| p.file_name().unwrap_or_default().to_string_lossy().to_string())
+            .collect();
+        let groups = extras::group_similar(&hashes, &names, max_dist.unwrap_or(4).min(16));
         Ok(groups
             .into_iter()
             .map(|group| group.into_iter().map(|i| files::nice_path(&paths[i])).collect())

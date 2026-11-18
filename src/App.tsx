@@ -57,7 +57,7 @@ import { Breadcrumb } from "./Breadcrumb";
 import { Tree } from "./Tree";
 import { Viewer } from "./Viewer";
 import {
-  ChevronGlyph, CloseGlyph, CompareGlyph, CopyGlyph, CutGlyph, DownGlyph, FilterGlyph, FitGlyph, FolderGlyph, GridGlyph, LargeGlyph, LinesGlyph,
+  ChevronGlyph, CloseGlyph, CompareGlyph, CopyGlyph, CutGlyph, SpinnerGlyph, DownGlyph, FilterGlyph, FitGlyph, FolderGlyph, GridGlyph, LargeGlyph, LinesGlyph,
   FileGlyph, NameGlyph, PanelGlyph, PasteGlyph, RatioGlyph, SelectTypeGlyph, SizeGlyph, StudioGlyph, TrashGlyph, TypeGlyph, UpGlyph,
 } from "./icons";
 
@@ -186,6 +186,7 @@ export default function App() {
   const [exif, setExif] = useState<ExifSummary | null>(null);
   const [dupes, setDupes] = useState<string[][] | null>(null);
   const [dupBusy, setDupBusy] = useState(false);
+  const [dupIdx, setDupIdx] = useState(0);
   const [dupPick, setDupPick] = useState<Record<string, boolean>>({});
   const [columns, setColumns] = useState(4);
   const [zoom, setZoom] = useState(1);
@@ -580,20 +581,40 @@ export default function App() {
     }
   }
 
+  function nextDupGroup() {
+    if (!dupes) return;
+    if (dupIdx + 1 < dupes.length) setDupIdx(dupIdx + 1);
+    else setDupes(null);
+  }
+
+  async function trashDupGroup() {
+    if (!dupes || !dupes[dupIdx]) return;
+    const paths = dupes[dupIdx].filter((path) => dupPick[path]);
+    if (paths.length > 0) await remove(false, paths);
+    nextDupGroup();
+  }
+
   async function scanDuplicates() {
     if (!current || dupBusy) return;
     setDupBusy(true);
     setToast("Buscando fotos parecidas…");
     try {
       const groups = await findSimilar(current);
-      // en cada grupo se conserva la foto más pesada y se marcan las demás
+      // Marcadas = las que van a la papelera. Si el grupo mezcla nombres con "(N)" y sin él, se marcan las que
+      // chocaron de nombre; si no, se conserva la más pesada y se marcan las demás.
       const sizeOf = (path: string) => files.find((item) => item.path === path)?.size ?? 0;
       const pick: Record<string, boolean> = {};
       for (const group of groups) {
-        const keep = group.reduce((best, path) => (sizeOf(path) > sizeOf(best) ? path : best), group[0]);
-        for (const path of group) pick[path] = path !== keep;
+        const copies = group.filter(isCopyName);
+        if (copies.length > 0 && copies.length < group.length) {
+          for (const path of group) pick[path] = copies.includes(path);
+        } else {
+          const keep = group.reduce((best, path) => (sizeOf(path) > sizeOf(best) ? path : best), group[0]);
+          for (const path of group) pick[path] = path !== keep;
+        }
       }
       setDupPick(pick);
+      setDupIdx(0);
       setDupes(groups);
       if (groups.length === 0) setToast("No encontré fotos duplicadas ni muy parecidas en esta carpeta.");
       else setToast(null);
@@ -1457,8 +1478,8 @@ export default function App() {
                   </button>
                 </div>
                 <div className="seg" role="group" aria-label="Duplicados">
-                  <button title="Buscar fotos duplicadas o parecidas en esta carpeta" aria-label="Buscar duplicados" disabled={dupBusy || !current} onClick={() => void scanDuplicates()}>
-                    <CopyGlyph />
+                  <button title={dupBusy ? "Buscando fotos parecidas…" : "Buscar fotos duplicadas o parecidas en esta carpeta"} aria-label="Buscar duplicados" disabled={dupBusy || !current} onClick={() => void scanDuplicates()}>
+                    {dupBusy ? <SpinnerGlyph /> : <CopyGlyph />}
                   </button>
                 </div>
               </div>
@@ -1594,42 +1615,40 @@ export default function App() {
           </div>
         </div>
       )}
-      {dupes && dupes.length > 0 && (
+      {dupes && dupes[dupIdx] && (
         <div className="scrim">
           <div className="dialog dupes" role="dialog" aria-modal="true">
             <h2>Fotos duplicadas o parecidas</h2>
             <p>
-              {dupes.length} grupo{dupes.length === 1 ? "" : "s"}. Dejé sin marcar la foto más pesada de cada uno; las marcadas van a la papelera.
+              Grupo {dupIdx + 1} de {dupes.length}. Las marcadas van a la papelera; puedes cambiar las marcas.
             </p>
             <div className="dupes-list">
-              {dupes.map((group, index) => (
-                <div className="dupes-group" key={index}>
-                  {group.map((path) => (
-                    <label className="dupes-item" key={path} title={path}>
-                      <DupThumb path={path} />
-                      <span className="dupes-name">{path.split(/[\/]/).pop()}</span>
-                      <input
-                        type="checkbox"
-                        checked={!!dupPick[path]}
-                        onChange={(event) => setDupPick((prev) => ({ ...prev, [path]: event.target.checked }))}
-                      />
-                    </label>
-                  ))}
-                </div>
-              ))}
+              <div className="dupes-group">
+                {dupes[dupIdx].map((path) => (
+                  <label className="dupes-item" key={path} title={path}>
+                    <DupThumb path={path} />
+                    <span className="dupes-name">{path.split(/[\\/]/).pop()}</span>
+                    {isCopyName(path) && <span className="dupes-tag" title="El nombre termina en (N) o «copia»: chocó con otro archivo">posible copia</span>}
+                    <input
+                      type="checkbox"
+                      checked={!!dupPick[path]}
+                      onChange={(event) => setDupPick((prev) => ({ ...prev, [path]: event.target.checked }))}
+                    />
+                  </label>
+                ))}
+              </div>
             </div>
             <div className="dialog-actions">
-              <button className="text-btn" onClick={() => setDupes(null)}>Cerrar</button>
+              <button className="text-btn" onClick={() => setDupes(null)}>Descartar todos</button>
+              <button className="text-btn" onClick={() => nextDupGroup()}>
+                {dupIdx + 1 < dupes.length ? "Saltar" : "Terminar"}
+              </button>
               <button
                 className="danger"
-                disabled={!dupes.some((group) => group.some((path) => dupPick[path]))}
-                onClick={() => {
-                  const paths = dupes.flat().filter((path) => dupPick[path]);
-                  setDupes(null);
-                  void remove(false, paths);
-                }}
+                disabled={busy || !dupes[dupIdx].some((path) => dupPick[path])}
+                onClick={() => void trashDupGroup()}
               >
-                A la papelera ({dupes.flat().filter((path) => dupPick[path]).length})
+                A la papelera ({dupes[dupIdx].filter((path) => dupPick[path]).length}) y siguiente
               </button>
             </div>
           </div>
@@ -1967,6 +1986,12 @@ function folderSummary(entry: Entry) {
   if (entry.hidden) parts.push(`${entry.hidden} ${entry.hidden === 1 ? "oculto" : "ocultos"}`);
   if (entry.others) parts.push(`${entry.others} ${entry.others === 1 ? "otro archivo" : "otros archivos"}`);
   return parts.length > 0 ? parts.join(" · ") : "Vacía";
+}
+
+/** Windows agrega "(2)" o "- copia" al nombre cuando choca con otro archivo. */
+function isCopyName(path: string) {
+  const name = path.split(/[\\/]/).pop() ?? path;
+  return /\s*\(\d+\)\.[^.]+$/.test(name) || /\s-\s(copia|copy)(\s*\(\d+\))?\.[^.]+$/i.test(name);
 }
 
 function DupThumb(props: { path: string }) {
