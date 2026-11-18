@@ -13,6 +13,29 @@ pub struct Config {
     pub filmstrip: bool,
     #[serde(default)]
     pub discard_edit_without_asking: bool,
+    /// Qué tan parecidas deben ser dos fotos para contarlas como duplicadas (0-16 de 64 bits).
+    #[serde(default = "default_dup_dist")]
+    pub dup_max_dist: u32,
+    /// Calidad al guardar ediciones (JPG, WebP y AVIF).
+    #[serde(default = "default_jpeg")]
+    pub jpeg_quality: u8,
+    #[serde(default = "default_webp")]
+    pub webp_quality: u8,
+    #[serde(default = "default_avif")]
+    pub avif_quality: u8,
+}
+
+fn default_dup_dist() -> u32 {
+    4
+}
+fn default_jpeg() -> u8 {
+    95
+}
+fn default_webp() -> u8 {
+    90
+}
+fn default_avif() -> u8 {
+    80
 }
 
 impl Default for Config {
@@ -22,6 +45,10 @@ impl Default for Config {
             shift_delete_without_asking: false,
             filmstrip: false,
             discard_edit_without_asking: false,
+            dup_max_dist: default_dup_dist(),
+            jpeg_quality: default_jpeg(),
+            webp_quality: default_webp(),
+            avif_quality: default_avif(),
         }
     }
 }

@@ -65,8 +65,6 @@ pub fn resize_fast(img: &DynamicImage, edge: u32) -> DynamicImage {
 
 // ---------- WebP y AVIF con pérdida ----------
 
-pub const WEBP_QUALITY: f32 = 90.0;
-pub const AVIF_QUALITY: u8 = 80;
 
 pub fn encode_webp(png: &[u8], quality: f32) -> Result<Vec<u8>, String> {
     let img = image::load_from_memory_with_format(png, ImageFormat::Png)

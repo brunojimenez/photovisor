@@ -14,6 +14,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 
 /// Calidad JPG al guardar (0-100). 95 con color completo es visualmente igual al original.
+#[cfg(test)]
 pub const JPEG_QUALITY: f32 = 95.0;
 
 pub fn encode_jpeg(png: &[u8], quality: f32) -> Result<Vec<u8>, String> {

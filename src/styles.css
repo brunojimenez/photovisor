@@ -124,7 +124,8 @@ img, video { display: block; }
   background: var(--panel);
   color: var(--muted);
 }
-.rail-ico { width: 32px; height: 28px; display: grid; place-items: center; }
+.rail-ico { width: 32px; height: 28px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); color: var(--text); }
+.rail:hover .rail-ico { border-color: #3a3a3a; }
 .twist {
   width: 16px;
   flex: none;
@@ -702,9 +703,12 @@ img, video { display: block; }
 .dupes-tag { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
 
 /* panel de herramientas (derecha, contraíble) */
-.tools { flex: none; width: 44px; display: flex; flex-direction: column; gap: 6px; padding: 12px 6px 8px; background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; }
+.tools { flex: none; width: 56px; display: flex; flex-direction: column; gap: 6px; padding: 12px 6px 8px; background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; }
 .tools.open { width: 232px; padding: 12px 12px 8px; }
 .tools-toggle { align-self: flex-end; }
+.tools:not(.open) { align-items: center; padding-left: 0; padding-right: 0; }
+.tools:not(.open) .tools-toggle { align-self: center; }
+.tools:not(.open) .tool-head { width: 36px; padding: 6px 0; }
 .tool { display: flex; flex-direction: column; gap: 6px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
 .tool:last-child { border-bottom: 0; }
 .tool-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px; border: 0; border-radius: 8px; background: transparent; color: inherit; cursor: pointer; font: inherit; font-weight: 600; }
@@ -717,3 +721,14 @@ img, video { display: block; }
 .tool-list button, .menu-labels button:not(.dot), .tool-action { padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: inherit; cursor: pointer; font: inherit; font-size: 12px; }
 .tool-list button.on, .menu-labels button.on:not(.dot) { background: var(--line); }
 .tool-action:disabled { opacity: 0.6; cursor: default; }
+
+/* ventana de configuración */
+.dialog.settings { width: min(460px, calc(100% - 32px)); max-height: calc(100% - 64px); display: flex; flex-direction: column; }
+.set-body { overflow: auto; display: grid; gap: 14px; margin-bottom: 14px; padding-right: 4px; }
+.set-sec { display: grid; gap: 8px; }
+.set-sec h3 { margin: 0; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.dialog .set-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 0; }
+.set-range { display: flex; align-items: center; gap: 8px; }
+.set-range output { min-width: 2.2em; text-align: right; color: var(--muted); }
+.set-hint { margin: 0 !important; font-size: 12px; }
+.dialog.settings select { border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); padding: 4px 8px; }

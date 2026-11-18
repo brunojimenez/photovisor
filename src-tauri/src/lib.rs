@@ -120,6 +120,27 @@ struct SaveConfig {
     filmstrip: bool,
     #[serde(default)]
     discard_edit_without_asking: bool,
+    #[serde(default = "config_default_dup")]
+    dup_max_dist: u32,
+    #[serde(default = "config_default_jpeg")]
+    jpeg_quality: u8,
+    #[serde(default = "config_default_webp")]
+    webp_quality: u8,
+    #[serde(default = "config_default_avif")]
+    avif_quality: u8,
+}
+
+fn config_default_dup() -> u32 {
+    config::Config::default().dup_max_dist
+}
+fn config_default_jpeg() -> u8 {
+    config::Config::default().jpeg_quality
+}
+fn config_default_webp() -> u8 {
+    config::Config::default().webp_quality
+}
+fn config_default_avif() -> u8 {
+    config::Config::default().avif_quality
 }
 
 fn root_of(state: &AppState) -> Result<PathBuf, String> {
@@ -153,6 +174,10 @@ fn save_config(app: tauri::AppHandle, config: SaveConfig) -> Result<(), String> 
             shift_delete_without_asking: config.shift_delete_without_asking,
             filmstrip: config.filmstrip,
             discard_edit_without_asking: config.discard_edit_without_asking,
+            dup_max_dist: config.dup_max_dist.min(16),
+            jpeg_quality: config.jpeg_quality.clamp(50, 100),
+            webp_quality: config.webp_quality.clamp(30, 100),
+            avif_quality: config.avif_quality.clamp(30, 100),
         },
     )
 }
@@ -393,6 +418,7 @@ fn rename_file(
 
 #[tauri::command]
 async fn save_edit(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     catalog: tauri::State<'_, Catalog>,
     source: String,
@@ -401,6 +427,7 @@ async fn save_edit(
     format: Option<String>,
 ) -> Result<String, String> {
     let root = root_of(&state)?;
+    let cfg = config::load(&app);
     let bytes = STANDARD
         .decode(data_b64.trim())
         .map_err(|_| "la imagen guardada no se pudo leer".to_string())?;
@@ -408,10 +435,10 @@ async fn save_edit(
     let saved = tauri::async_runtime::spawn_blocking(move || {
         // el editor entrega un PNG sin pérdida; aquí se codifica en el formato final
         let bytes = match format.as_deref() {
-            Some("jpeg") => codec::encode_jpeg(&bytes, codec::JPEG_QUALITY)?,
+            Some("jpeg") => codec::encode_jpeg(&bytes, cfg.jpeg_quality.clamp(50, 100) as f32)?,
             Some("png") => codec::optimize_png(&bytes),
-            Some("webp") => extras::encode_webp(&bytes, extras::WEBP_QUALITY)?,
-            Some("avif") => extras::encode_avif(&bytes, extras::AVIF_QUALITY)?,
+            Some("webp") => extras::encode_webp(&bytes, cfg.webp_quality.clamp(30, 100) as f32)?,
+            Some("avif") => extras::encode_avif(&bytes, cfg.avif_quality.clamp(30, 100))?,
             _ => bytes,
         };
         let dest = files::save_image(&root, Path::new(&source), &bytes, &mode)?;

@@ -38,6 +38,11 @@ export type Config = {
   shiftDeleteWithoutAsking: boolean;
   filmstrip: boolean;
   discardEditWithoutAsking: boolean;
+  /** Qué tan parecidas deben ser dos fotos para contarlas como duplicadas (0-16; más alto = más permisivo). */
+  dupMaxDist: number;
+  jpegQuality: number;
+  webpQuality: number;
+  avifQuality: number;
 };
 
 export const COMPUTER = "__computer__";

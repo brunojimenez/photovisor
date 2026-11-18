@@ -57,7 +57,7 @@ import { Breadcrumb } from "./Breadcrumb";
 import { Tree } from "./Tree";
 import { Viewer } from "./Viewer";
 import {
-  ChevronGlyph, CloseGlyph, CompareGlyph, CopyGlyph, CutGlyph, SpinnerGlyph, ToolsGlyph, DownGlyph, FilterGlyph, FitGlyph, FolderGlyph, GridGlyph, LargeGlyph, LinesGlyph,
+  ChevronGlyph, CloseGlyph, CompareGlyph, CopyGlyph, CutGlyph, EditGlyph, SettingsGlyph, SpinnerGlyph, ToolsGlyph, DownGlyph, FilterGlyph, FitGlyph, FolderGlyph, GridGlyph, LargeGlyph, LinesGlyph,
   FileGlyph, NameGlyph, PanelGlyph, PasteGlyph, RatioGlyph, SelectTypeGlyph, SizeGlyph, StudioGlyph, TrashGlyph, TypeGlyph, UpGlyph,
 } from "./icons";
 
@@ -82,6 +82,10 @@ const EMPTY_CONFIG: Config = {
   shiftDeleteWithoutAsking: false,
   filmstrip: false,
   discardEditWithoutAsking: false,
+  dupMaxDist: 4,
+  jpegQuality: 95,
+  webpQuality: 90,
+  avifQuality: 80,
 };
 
 const LAYOUT_KEY = "pv.layout";
@@ -152,6 +156,7 @@ export default function App() {
     }
   });
   const [dupCount, setDupCount] = useState<number | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const currentRef = useRef<string | null>(null);
   const [editorStart, setEditorStart] = useState<{ tool?: "fill"; mode?: "replace" }>({});
   const trail = useRef<string[]>([]);
@@ -607,12 +612,18 @@ export default function App() {
     });
   }
 
+  function updateConfig(patch: Partial<Config>) {
+    const next = { ...config, ...patch };
+    setConfig(next);
+    void saveConfig(next);
+  }
+
   async function scanDuplicates() {
     if (!current || dupBusy) return;
     setDupBusy(true);
     setDupCount(null);
     try {
-      const groups = await findSimilar(current);
+      const groups = await findSimilar(current, config.dupMaxDist);
       // Marcadas = las que van a la papelera. Si el grupo mezcla nombres con "(N)" y sin él, se marcan las que
       // chocaron de nombre; si no, se conserva la más pesada y se marcan las demás.
       const sizeOf = (path: string) => files.find((item) => item.path === path)?.size ?? 0;
@@ -1425,6 +1436,9 @@ export default function App() {
                   <button title="Cortar (Ctrl+X)" aria-label="Cortar" onClick={() => copySelection(true)}><CutGlyph /></button>
                   <button title="Pegar (Ctrl+V)" aria-label="Pegar" disabled={!clip} onClick={() => void doPaste()}><PasteGlyph /></button>
                 </div>
+                <div className="seg" role="group" aria-label="Editar">
+                  <button title="Editar la foto (E)" aria-label="Editar" disabled={focused?.kind !== "image"} onClick={openEditor}><EditGlyph /></button>
+                </div>
                 <div className="seg" role="group" aria-label="Eliminar">
                   <button className="del" title="Enviar a la papelera (Supr)" aria-label="Eliminar" disabled={busy || !current || current === COMPUTER || targets().length === 0} onClick={() => void remove(false, targets())}><TrashGlyph /></button>
                 </div>
@@ -1454,6 +1468,11 @@ export default function App() {
                   <button className={sortKey === "size" ? "on" : ""} title={sortKey === "size" && sortDir === "desc" ? "Peso, descendente" : "Peso, ascendente"} aria-label="Ordenar por peso" onClick={() => toggleSort("size")}><SizeGlyph /></button>
                   <button title={sortDir === "asc" ? "Ascendente" : "Descendente"} aria-label={sortDir === "asc" ? "Ascendente" : "Descendente"} onClick={() => setSortDir((dir) => (dir === "asc" ? "desc" : "asc"))}>
                     {sortDir === "asc" ? <UpGlyph /> : <DownGlyph />}
+                  </button>
+                </div>
+                <div className="seg" role="group" aria-label="Configuración">
+                  <button className={settingsOpen ? "on" : ""} title="Configuración" aria-label="Configuración" onClick={() => setSettingsOpen(true)}>
+                    <SettingsGlyph />
                   </button>
                 </div>
               </div>
@@ -1662,6 +1681,80 @@ export default function App() {
                 <figcaption>{entry.name}</figcaption>
               </figure>
             ))}
+          </div>
+        </div>
+      )}
+      {settingsOpen && (
+        <div className="scrim" onPointerDown={(event) => event.target === event.currentTarget && setSettingsOpen(false)}>
+          <div className="dialog settings" role="dialog" aria-modal="true" aria-label="Configuración">
+            <h2>Configuración</h2>
+            <div className="set-body">
+              <section className="set-sec">
+                <h3>Apariencia</h3>
+                <label className="set-row">
+                  <span>Tamaño de los íconos</span>
+                  <select value={iconSize} onChange={(event) => setIconSize(event.target.value as IconSize)}>
+                    <option value="list">Lista</option>
+                    <option value="medium">Medianos</option>
+                    <option value="large">Grandes</option>
+                  </select>
+                </label>
+                <label className="set-row">
+                  <span>Panel de carpetas</span>
+                  <input type="checkbox" checked={foldersOpen} onChange={(event) => setFoldersOpen(event.target.checked)} />
+                </label>
+                <label className="set-row">
+                  <span>Panel de herramientas</span>
+                  <input type="checkbox" checked={toolsOpen} onChange={(event) => event.target.checked !== toolsOpen && toggleTools()} />
+                </label>
+              </section>
+              <section className="set-sec">
+                <h3>Duplicados</h3>
+                <label className="set-row">
+                  <span>Qué tan parecidas deben ser</span>
+                  <select value={config.dupMaxDist} onChange={(event) => updateConfig({ dupMaxDist: Number(event.target.value) })}>
+                    <option value={2}>Casi idénticas</option>
+                    <option value={4}>Normal</option>
+                    <option value={8}>Amplio</option>
+                    <option value={12}>Muy amplio</option>
+                  </select>
+                </label>
+                <p className="set-hint">Con «Amplio» aparecen más grupos, pero también fotos solo parecidas. Los nombres con (N) o «copia» se agrupan con un margen extra.</p>
+              </section>
+              <section className="set-sec">
+                <h3>Calidad al guardar ediciones</h3>
+                {(
+                  [
+                    ["JPG", "jpegQuality", 50, 100],
+                    ["WebP", "webpQuality", 30, 100],
+                    ["AVIF", "avifQuality", 30, 100],
+                  ] as const
+                ).map(([label, key, min, max]) => (
+                  <label className="set-row" key={key}>
+                    <span>{label}</span>
+                    <span className="set-range">
+                      <input type="range" min={min} max={max} value={config[key]} onChange={(event) => updateConfig({ [key]: Number(event.target.value) })} />
+                      <output>{config[key]}</output>
+                    </span>
+                  </label>
+                ))}
+                <p className="set-hint">Más alto = más fiel y más pesado. Cada formato se usa cuando la foto original es de ese mismo formato.</p>
+              </section>
+              <section className="set-sec">
+                <h3>Confirmaciones</h3>
+                <label className="set-row">
+                  <span>Preguntar antes de borrar sin papelera</span>
+                  <input type="checkbox" checked={!config.shiftDeleteWithoutAsking} onChange={(event) => updateConfig({ shiftDeleteWithoutAsking: !event.target.checked })} />
+                </label>
+                <label className="set-row">
+                  <span>Preguntar al cerrar el editor con cambios</span>
+                  <input type="checkbox" checked={!config.discardEditWithoutAsking} onChange={(event) => updateConfig({ discardEditWithoutAsking: !event.target.checked })} />
+                </label>
+              </section>
+            </div>
+            <div className="dialog-actions">
+              <button className="text-btn" onClick={() => setSettingsOpen(false)}>Listo</button>
+            </div>
           </div>
         </div>
       )}
