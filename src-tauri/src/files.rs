@@ -13,7 +13,7 @@ use std::time::UNIX_EPOCH;
 const IMAGE_EXT: &[&str] = &["jpg", "jpeg", "png", "gif", "webp", "bmp", "tif", "tiff"];
 const VIDEO_EXT: &[&str] = &["mp4", "webm", "mov", "mkv", "avi", "m4v"];
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Entry {
     pub name: String,
@@ -21,6 +21,12 @@ pub struct Entry {
     pub kind: String,
     pub modified_ms: u64,
     pub size: u64,
+    /// Solo carpetas: cuántas subcarpetas, fotos/videos y otros archivos tiene adentro (un nivel).
+    pub dirs: u32,
+    pub media: u32,
+    pub others: u32,
+    /// Elementos ocultos (los que parten con punto): no se listan, pero cuentan para no borrar una carpeta "vacía" con cosas.
+    pub hidden: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -188,6 +194,7 @@ pub fn list_drives() -> Vec<Entry> {
             kind: "dir".into(),
             modified_ms: 0,
             size: 0,
+            ..Default::default()
         });
     }
     out
@@ -221,7 +228,7 @@ pub fn quick_access() -> Vec<Entry> {
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| shown.clone());
-            out.push(Entry { name, path: shown, kind: "dir".into(), modified_ms: 0, size: 0 });
+            out.push(Entry { name, path: shown, kind: "dir".into(), modified_ms: 0, size: 0, ..Default::default() });
         }
     }
     out
@@ -331,6 +338,31 @@ pub fn resolve_open(path: &Path) -> Result<(PathBuf, Option<PathBuf>), String> {
     }
 }
 
+/// Cuenta lo que hay dentro de una carpeta (un nivel, con tope para no colgarse en carpetas enormes).
+fn folder_counts(folder: &Path) -> (u32, u32, u32, u32) {
+    let (mut dirs, mut media, mut others, mut hidden) = (0u32, 0u32, 0u32, 0u32);
+    let Ok(read) = fs::read_dir(folder) else { return (0, 0, 0, 0) };
+    for item in read.flatten().take(5000) {
+        let name = item.file_name().to_string_lossy().to_string();
+        if name.eq_ignore_ascii_case("thumbs.db") || name.eq_ignore_ascii_case("desktop.ini") {
+            continue;
+        }
+        if name.starts_with('.') {
+            hidden += 1;
+            continue;
+        }
+        let Ok(kind) = item.file_type() else { continue };
+        if kind.is_dir() {
+            dirs += 1;
+        } else if kind_of(&item.path()).is_some() {
+            media += 1;
+        } else {
+            others += 1;
+        }
+    }
+    (dirs, media, others, hidden)
+}
+
 pub fn list_folder(folder: &Path, focus: Option<&Path>) -> Result<FolderView, String> {
     let mut entries = Vec::new();
     let read = fs::read_dir(folder).map_err(|e| e.to_string())?;
@@ -349,14 +381,19 @@ pub fn list_folder(folder: &Path, focus: Option<&Path>) -> Result<FolderView, St
         } else if let Some(kind) = kind_of(&path) {
             kind
         } else {
-            continue;
+            "file"
         };
+        let (dirs, media, others, hidden) = if meta.is_dir() { folder_counts(&path) } else { (0, 0, 0, 0) };
         entries.push(Entry {
             name,
             path: nice_path(&path),
             kind: kind.to_string(),
             modified_ms: modified_ms(&meta),
             size: if meta.is_file() { meta.len() } else { 0 },
+            dirs,
+            media,
+            others,
+            hidden,
         });
     }
     entries.sort_by(|a, b| {

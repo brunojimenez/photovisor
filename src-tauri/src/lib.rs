@@ -85,6 +85,28 @@ fn open_in_studio(path: String) -> Result<(), String> {
     cmd.spawn().map(|_| ()).map_err(|e| format!("No pude abrir el Studio: {e}"))
 }
 
+/// Abre un archivo (que no es foto ni video) con el programa que Windows tenga para ese tipo.
+#[tauri::command]
+fn open_external(state: tauri::State<AppState>, path: String) -> Result<(), String> {
+    let root = root_of(&state)?;
+    let file = files::ensure_inside(&root, Path::new(&path))?;
+    if !file.is_file() {
+        return Err("Ese archivo ya no existe.".to_string());
+    }
+    const RISKY: &[&str] = &["exe", "bat", "cmd", "com", "msi", "scr", "ps1", "vbs", "vbe", "js", "jse", "wsf", "jar", "lnk", "reg", "hta", "cpl"];
+    if RISKY.contains(&files::extension(&file).as_str()) {
+        return Err("Por seguridad no abro programas ni scripts desde aquí. Ábrelo desde el Explorador.".to_string());
+    }
+    Command::new("explorer")
+        .arg(&file)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("No pude abrirlo: {e}"))
+}
+
 struct AppState {
     root: Mutex<Option<PathBuf>>,
 }
@@ -481,6 +503,7 @@ fn parse_range(header: &str, size: u64) -> Option<(u64, u64)> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             // otra copia quiso abrirse (p. ej. «Editar en PhotoVisor» desde el estudio): se reusa esta ventana
             if let Some(window) = app.get_webview_window("main") {
@@ -521,6 +544,7 @@ pub fn run() {
             launch_args,
             studio_info,
             open_in_studio,
+            open_external,
             save_edit,
             suggest_tilt,
             catalog_folder,
