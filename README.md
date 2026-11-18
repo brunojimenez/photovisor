@@ -15,21 +15,14 @@ Hecho con Tauri 2 (Rust y WebView2), React 19, TypeScript y Vite. El diseño ori
 
 ## Capturas
 
-<!-- Cuando estén las imágenes en docs/capturas/ (ver docs/capturas/LEEME.md), quita estos comentarios.
-     Las capturas usan solo las imágenes de muestra de docs/muestras/, que son creaciones propias.
+Las imágenes de las capturas son dibujos propios (ver `docs/muestras/`).
 
 | | |
 |---|---|
-| ![Explorador](docs/capturas/explorador.png) | ![Visor](docs/capturas/visor.png) |
-| **Explorador:** árbol, iconos y ruta navegable | **Visor:** pantalla completa, editar y eliminar |
-| ![Ajustes](docs/capturas/editor-ajustes.png) | ![Curvas](docs/capturas/editor-curvas.png) |
-| **Editor:** luz, color y detalle | **Curvas y niveles** con histograma |
-| ![Foco](docs/capturas/editor-foco.png) | ![Íconos](docs/capturas/editor-iconos.png) |
-| **Foco:** zona nítida y el resto difuminado | **Íconos y emojis** de color |
-| ![Marca de agua](docs/capturas/marca-de-agua.png) | ![Duplicados](docs/capturas/duplicados.png) |
-| **Marca de agua** en lote | **Duplicados** por grupos |
-
--->
+| ![Explorador](docs/capturas/explorador.png) | ![Ajustes del editor](docs/capturas/editor-ajustes.webp) |
+| **Explorador:** árbol, miniaturas, vista previa y panel de herramientas | **Editor:** looks, luz, color y detalle |
+| ![Curvas](docs/capturas/editor-curvas.webp) | ![Marca de agua](docs/capturas/marca-de-agua.webp) |
+| **Curvas** por canal, con el histograma de la foto de fondo | **Marca de agua** con texto, emojis de color y arcoíris |
 
 ## Desarrollo
 

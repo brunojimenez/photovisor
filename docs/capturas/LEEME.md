@@ -23,11 +23,11 @@ El script espera 5 segundos (cambia con `-Espera`) y guarda solo la ventana de P
 |---|---|
 | `explorador.png` | Explorador con árbol, iconos y la ruta con migas |
 | `visor.png` | Visor a pantalla completa con la barra de Editar y eliminar |
-| `editor-ajustes.png` | Editor en Ajustar, con una foto antes/después |
-| `editor-curvas.png` | Pestaña Curvas con el histograma |
+| `editor-ajustes.webp` | Editor en Ajustar, con una foto antes/después |
+| `editor-curvas.webp` | Pestaña Curvas con el histograma |
 | `editor-foco.png` | Pincel con Foco: una elipse nítida y el fondo difuminado |
 | `editor-iconos.png` | Íconos y emojis de color sobre una foto |
-| `marca-de-agua.png` | Marca de agua en lote |
+| `marca-de-agua.webp` | Marca de agua en lote |
 | `duplicados.png` | Asistente de duplicados |
 
-Después de agregar los archivos, quita los comentarios `<!--` y `-->` de la sección «Capturas» del `README.md`.
+Ya están en el README: `explorador`, `editor-ajustes`, `editor-curvas` y `marca-de-agua`. Faltan `visor`, `editor-foco`, `editor-iconos` y `duplicados`: al agregarlos, súmalos a la tabla de la sección «Capturas» del `README.md` (sirven `.png` o `.webp`).
