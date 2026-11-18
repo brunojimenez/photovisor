@@ -1437,7 +1437,7 @@ export default function App() {
                   <button title="Pegar (Ctrl+V)" aria-label="Pegar" disabled={!clip} onClick={() => void doPaste()}><PasteGlyph /></button>
                 </div>
                 <div className="seg" role="group" aria-label="Editar">
-                  <button title="Editar la foto (E)" aria-label="Editar" disabled={focused?.kind !== "image"} onClick={openEditor}><EditGlyph /></button>
+                  <button className="primary" title="Editar la foto (E)" aria-label="Editar" disabled={focused?.kind !== "image"} onClick={openEditor}><EditGlyph /></button>
                 </div>
                 <div className="seg" role="group" aria-label="Eliminar">
                   <button className="del" title="Enviar a la papelera (Supr)" aria-label="Eliminar" disabled={busy || !current || current === COMPUTER || targets().length === 0} onClick={() => void remove(false, targets())}><TrashGlyph /></button>

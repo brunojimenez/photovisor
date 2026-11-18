@@ -1,0 +1,2 @@
+Fluent Emoji Flat — Copyright (c) Microsoft Corporation. Licencia MIT.
+https://github.com/microsoft/fluentui-emoji/blob/main/LICENSE

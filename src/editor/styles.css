@@ -2010,3 +2010,19 @@ body.resizing-x *, body.resizing-y * { cursor: inherit !important; }
 .live-prev-bar i { display: block; height: 100%; background: var(--accent, #8b5cf6); transition: width 0.4s; }
 .live-prev-note { margin: 6px 0 0; font-size: 11px; color: var(--muted); }
 .draft-toggle { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+
+/* vista previa del color y estilo de los íconos de trazo */
+.ink-glyph { display: inline-block; line-height: 1; }
+.look-dot { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.35); margin-right: 6px; vertical-align: -2px; flex: none; }
+.editor-seg button { display: inline-flex; align-items: center; justify-content: center; }
+
+/* degradados multicolor */
+.palette-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 2px; }
+.palette-chip { width: 44px; height: 22px; padding: 0; border-radius: 6px; border: 2px solid transparent; outline: 1px solid rgba(255, 255, 255, 0.25); }
+.palette-chip.on { border-color: #fff; }
+
+/* emojis a color */
+.fe-cats { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+.fe-cats button { padding: 3px 8px; border: 1px solid #2a2a2a; border-radius: 999px; background: #151515; font-size: 12px; }
+.fe-cats button.on { border-color: var(--accent); background: var(--tint); color: #fff; }
+.fe-grid img { display: block; margin: auto; }

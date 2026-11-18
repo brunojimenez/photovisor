@@ -732,3 +732,8 @@ img, video { display: block; }
 .set-range output { min-width: 2.2em; text-align: right; color: var(--muted); }
 .set-hint { margin: 0 !important; font-size: 12px; }
 .dialog.settings select { border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); padding: 4px 8px; }
+
+/* el botón Editar de la barra resalta igual que el del visor */
+.seg button.primary { background: var(--brand); color: #fff; border-color: transparent; }
+.seg button.primary:hover:not(:disabled) { filter: brightness(1.1); }
+.seg button.primary:disabled { opacity: 0.4; }

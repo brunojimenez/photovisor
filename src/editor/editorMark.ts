@@ -16,6 +16,10 @@ export type Watermark = {
   gap: number;
   shade: number;
   place: WmPlace;
+  /** Estilo del color del texto: liso (por defecto), degradado (color → color2) o multicolor (`palette`). */
+  look?: "solid" | "gradient" | "rainbow";
+  color2?: string;
+  palette?: string;
 };
 
 export const WM_FONTS = [
@@ -109,6 +113,10 @@ export type Piece = {
   /** Solo íconos de trazo: liso, degradado (color → color2) o arcoíris. */
   look?: "solid" | "gradient" | "rainbow";
   color2?: string;
+  /** Con el estilo multicolor: cuál de las paletas de `PALETTES` (por defecto el arcoíris). */
+  palette?: string;
+  /** Giro en grados alrededor del centro (sentido horario). */
+  rot?: number;
 };
 
 export type WmFrame = { x: number; y: number; w: number; h: number };
@@ -524,13 +532,15 @@ export function drawWatermark(
   ctx.clip();
   ctx.globalAlpha = opacity;
   const place = wm.place === "tile" ? "tile" : wm.place;
+  const baseColor = /^#[0-9a-fA-F]{6}$/.test(wm.color) ? wm.color : "#ffffff";
+  const markInk = makeInk(ctx, wm, baseColor);
   const box = frame.w > 8 && frame.h > 8 ? frame : { x: 0, y: 0, w: imgW, h: imgH };
 
   if (place !== "tile") {
     if (wm.mode === "text") {
       const px = fontPx(imgW, imgH, wm.size);
       const text = wm.text.trim();
-      ctx.fillStyle = /^#[0-9a-fA-F]{6}$/.test(wm.color) ? wm.color : "#ffffff";
+      ctx.fillStyle = baseColor;
       ctx.textBaseline = "middle";
       ctx.textAlign = "left";
       if (wm.shade > 0) {
@@ -543,6 +553,7 @@ export function drawWatermark(
       const spot = placed(box, tw, px, place);
       ctx.translate(spot.x + tw / 2, spot.y + px / 2);
       ctx.rotate(angle);
+      ctx.fillStyle = markInk(-tw / 2, -px / 2, tw / 2, px / 2);
       fillMark(ctx, text, -tw / 2, 0, px, wm.font);
     } else if (image) {
       const { w, h } = stampSize(box, image, wm.size);
@@ -564,7 +575,7 @@ export function drawWatermark(
   if (wm.mode === "text") {
     const px = fontPx(imgW, imgH, wm.size);
     const text = wm.text.trim();
-    ctx.fillStyle = /^#[0-9a-fA-F]{6}$/.test(wm.color) ? wm.color : "#ffffff";
+    ctx.fillStyle = baseColor;
     ctx.textBaseline = "middle";
     ctx.textAlign = "left";
     if (wm.shade > 0) {
@@ -583,6 +594,7 @@ export function drawWatermark(
     for (let y = -span / 2; y < span / 2 && drawn < 900; y += gapY) {
       const ox = (row % 2) * (gapX * 0.5);
       for (let x = -span / 2 + ox; x < span / 2 && drawn < 900; x += gapX) {
+        ctx.fillStyle = markInk(x, y - px / 2, x + tw, y + px / 2);
         fillMark(ctx, text, x, y, px, wm.font);
         drawn++;
       }
@@ -612,28 +624,102 @@ export function drawWatermark(
 
 export const RAINBOW_STOPS = ["#ff3b30", "#ff9500", "#ffd60a", "#34c759", "#0a84ff", "#af52de"];
 
-/** Tinta de un ícono: color liso, degradado o arcoíris en diagonal sobre su caja. */
-function pieceInk(ctx: CanvasRenderingContext2D, piece: Piece, base: string) {
+/** Degradados multicolor que se pueden elegir además del arcoíris. */
+export const PALETTES: readonly { id: string; name: string; stops: readonly string[] }[] = [
+  { id: "rainbow", name: "Arcoíris", stops: RAINBOW_STOPS },
+  { id: "sunset", name: "Atardecer", stops: ["#ffd60a", "#ff9500", "#ff3b30", "#c2185b", "#6a1b9a"] },
+  { id: "ocean", name: "Océano", stops: ["#b2fff0", "#3ec4e0", "#0a84ff", "#1a3fb0", "#0b1d6b"] },
+  { id: "neon", name: "Neón", stops: ["#39ff14", "#00e5ff", "#ff2bd6", "#ffee00"] },
+  { id: "fire", name: "Fuego", stops: ["#fff3a0", "#ffd60a", "#ff9500", "#ff3b30", "#7a0c0c"] },
+  { id: "forest", name: "Bosque", stops: ["#d4f7a0", "#7bd35a", "#34c759", "#1b7a43", "#0b3d2a"] },
+  { id: "candy", name: "Algodón de azúcar", stops: ["#ffc8dd", "#ff8fc7", "#bde0fe", "#a2d2ff", "#cdb4db"] },
+  { id: "ice", name: "Hielo", stops: ["#ffffff", "#d6f1ff", "#8fd3ff", "#4aa8ff"] },
+  { id: "gold", name: "Oro", stops: ["#fff3b0", "#ffd24a", "#c9962b", "#8a5a0c", "#ffe58a"] },
+  { id: "aurora", name: "Aurora", stops: ["#39ff9c", "#3ec4e0", "#7a5cff", "#ff4fa3"] },
+];
+
+/** Paradas de color de una paleta; si el id no existe vale el arcoíris. */
+export function paletteStops(id?: string): readonly string[] {
+  return (PALETTES.find((p) => p.id === id) ?? PALETTES[0]).stops;
+}
+
+type InkSpec = { look?: "solid" | "gradient" | "rainbow"; color2?: string; palette?: string };
+
+/** Tinta: color liso, degradado o multicolor en diagonal sobre la caja que se le pase. */
+export function makeInk(ctx: CanvasRenderingContext2D, spec: InkSpec, base: string) {
   return (x0: number, y0: number, x1: number, y1: number): string | CanvasGradient => {
-    if (piece.look !== "gradient" && piece.look !== "rainbow") return base;
+    if (spec.look !== "gradient" && spec.look !== "rainbow") return base;
     const g = ctx.createLinearGradient(x0, y0, x1, y1);
-    if (piece.look === "rainbow") RAINBOW_STOPS.forEach((c, i) => g.addColorStop(i / (RAINBOW_STOPS.length - 1), c));
-    else {
+    if (spec.look === "rainbow") {
+      const stops = paletteStops(spec.palette);
+      stops.forEach((c, i) => g.addColorStop(i / (stops.length - 1), c));
+    } else {
       g.addColorStop(0, base);
-      g.addColorStop(1, /^#[0-9a-fA-F]{6}$/.test(piece.color2 ?? "") ? (piece.color2 as string) : base);
+      g.addColorStop(1, /^#[0-9a-fA-F]{6}$/.test(spec.color2 ?? "") ? (spec.color2 as string) : base);
     }
     return g;
   };
 }
 
+function pieceInk(ctx: CanvasRenderingContext2D, piece: Piece, base: string) {
+  return makeInk(ctx, piece, base);
+}
+
+// ---------- emojis a color (Fluent Emoji Flat, MIT) ----------
+const fluentImgs = new Map<string, HTMLImageElement>();
+const fluentLoading = new Set<string>();
+const fluentListeners = new Set<() => void>();
+
+/** Avisa cuando un emoji termina de cargar para que el lienzo se vuelva a dibujar. */
+export function onFluentReady(cb: () => void) {
+  fluentListeners.add(cb);
+  return () => {
+    fluentListeners.delete(cb);
+  };
+}
+
+/** SVG del emoji como data URL (también sirve para las miniaturas de la paleta). */
+export function fluentSvgUrl(body: string, px = 256) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="${px}" height="${px}">${body}</svg>`;
+  return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+}
+
+/** La imagen del emoji si ya cargó; si no, la pide y devuelve null (se redibuja al terminar). */
+function fluentImage(name: string): HTMLImageElement | null {
+  const img = fluentImgs.get(name);
+  if (img) return img;
+  if (fluentLoading.has(name)) return null;
+  fluentLoading.add(name);
+  void import("./fluentSvgs").then(({ FLUENT_BODIES }) => {
+    const body = FLUENT_BODIES[name];
+    if (!body) return;
+    const im = new Image();
+    im.onload = () => {
+      fluentImgs.set(name, im);
+      fluentListeners.forEach((cb) => cb());
+    };
+    im.src = fluentSvgUrl(body);
+  });
+  return null;
+}
+
 export function drawPieces(ctx: CanvasRenderingContext2D, pieces: Piece[], guideId = 0) {
   for (const piece of pieces) {
     ctx.save();
+    if (piece.rot) {
+      ctx.translate(piece.x, piece.y);
+      ctx.rotate((piece.rot * Math.PI) / 180);
+      ctx.translate(-piece.x, -piece.y);
+    }
     const ink = /^#[0-9a-fA-F]{6}$/.test(piece.color) ? piece.color : "#ffffff";
     if (piece.kind === "text") {
       const shown = plainGlyph(piece.text);
       ctx.font = textFont(piece.size, piece.font);
       ctx.fillStyle = ink;
+      if (piece.look === "gradient" || piece.look === "rainbow") {
+        const tw = ctx.measureText(shown).width;
+        ctx.fillStyle = pieceInk(ctx, piece, ink)(piece.x - tw / 2, piece.y - piece.size / 2, piece.x + tw / 2, piece.y + piece.size / 2);
+      }
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(shown, piece.x, piece.y);
@@ -646,7 +732,10 @@ export function drawPieces(ctx: CanvasRenderingContext2D, pieces: Piece[], guide
       }
     } else {
       const key = colorKey(piece.icon);
-      if (lucideNode(piece.icon)) drawLucide(ctx, piece.icon, piece.x, piece.y, piece.size, pieceInk(ctx, piece, ink));
+      if (piece.icon.startsWith("fe:")) {
+        const im = fluentImage(piece.icon.slice(3));
+        if (im) ctx.drawImage(im, piece.x - piece.size / 2, piece.y - piece.size / 2, piece.size, piece.size);
+      } else if (lucideNode(piece.icon)) drawLucide(ctx, piece.icon, piece.x, piece.y, piece.size, pieceInk(ctx, piece, ink));
       else if (key) drawColorIcon(ctx, key, piece.x - piece.size / 2, piece.y - piece.size / 2, piece.size);
       else {
         ctx.font = textFont(piece.size);

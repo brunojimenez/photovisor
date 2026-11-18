@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   ArrowLeft, Bandage, Focus, Brush, ClipboardCopy, Crop, Download, Eraser, Eye, FlipHorizontal2, FlipVertical2, Maximize, MoveHorizontal,
   MoveVertical, Paintbrush, Palette, Pencil, Pipette, Replace, RotateCcw, RotateCcwSquare, RotateCwSquare, Save, SaveAll, Scaling,
@@ -7,7 +7,8 @@ import {
 import { ADJUST_ZERO, HSL_BANDS, STYLE_KINDS, applyAdjust, adjustIdle, type Adjust, type Band, type HslKey } from "./editorAdjust";
 import { PRESETS, presetAdjust } from "./editorPresets";
 import { LUCIDE_STICKERS, lucideNode } from "./lucideStickers";
-import { WM_COLOR_ICONS, WM_DEFAULT, drawPieces, drawWatermark, installedFonts, watermarkIdle, wmFont, type Piece, type Watermark } from "./editorMark";
+import { FLUENT_CATS } from "./fluentList";
+import { WM_COLOR_ICONS, WM_DEFAULT, drawPieces, drawWatermark, fluentSvgUrl, installedFonts, onFluentReady, PALETTES, paletteStops, watermarkIdle, wmFont, type Piece, type Watermark } from "./editorMark";
 import { applyPaint, cloneCanvas, eraseOverlay, type PaintFx } from "./editorPaint";
 
 type Crop = { x: number; y: number; w: number; h: number };
@@ -276,6 +277,9 @@ function loadWm(): Watermark {
       text: typeof parsed.text === "string" ? parsed.text.slice(0, 80) : "",
       font: wmFont(typeof parsed.font === "string" ? parsed.font : ""),
       color: typeof parsed.color === "string" && /^#[0-9a-fA-F]{6}$/.test(parsed.color) ? parsed.color : WM_DEFAULT.color,
+      look: parsed.look === "gradient" || parsed.look === "rainbow" ? parsed.look : "solid",
+      color2: typeof parsed.color2 === "string" && /^#[0-9a-fA-F]{6}$/.test(parsed.color2) ? parsed.color2 : "#ff4fa3",
+      palette: typeof parsed.palette === "string" ? parsed.palette : "rainbow",
       opacity: wmNum(parsed.opacity, WM_DEFAULT.opacity, 8, 92),
       angle: wmNum(parsed.angle, WM_DEFAULT.angle, -75, 75),
       size: wmNum(parsed.size, WM_DEFAULT.size, 10, 80),
@@ -532,7 +536,12 @@ export default function Editor({
   const [stickColor, setStickColor] = useState("#ffffff");
   const [stickColor2, setStickColor2] = useState("#ff4fa3");
   const [stickLook, setStickLook] = useState<"solid" | "gradient" | "rainbow">("solid");
+  const [stickPalette, setStickPalette] = useState("rainbow");
+  const [noteLook, setNoteLook] = useState<"solid" | "gradient" | "rainbow">("solid");
+  const [noteColor2, setNoteColor2] = useState("#ff4fa3");
+  const [notePalette, setNotePalette] = useState("rainbow");
   const [pieceSize, setPieceSize] = useState(72);
+  const [pieceRot, setPieceRot] = useState(0);
   const [clonePick, setClonePick] = useState(false);
   const [cloneOn, setCloneOn] = useState(false);
   const [wmFileName, setWmFileName] = useState("");
@@ -1139,6 +1148,8 @@ export default function Editor({
     setWbPick(false);
   }
 
+  useEffect(() => onFluentReady(() => setPaintTick((n) => n + 1)), []);
+
   function pickStickIcon(ch: string) {
     setStickIcon(ch);
     if (!pieceFresh.current && pieces.some((p) => p.id === pieceId && p.kind === "icon")) {
@@ -1148,13 +1159,26 @@ export default function Editor({
   }
 
   /** Cambia color/estilo de los íconos: lo que se agregue de ahora en adelante y el ícono seleccionado. */
-  function patchStick(patch: { color?: string; color2?: string; look?: "solid" | "gradient" | "rainbow" }) {
+  function patchStick(patch: { color?: string; color2?: string; look?: "solid" | "gradient" | "rainbow"; palette?: string }) {
     if (patch.color !== undefined) setStickColor(patch.color);
     if (patch.color2 !== undefined) setStickColor2(patch.color2);
     if (patch.look !== undefined) setStickLook(patch.look);
+    if (patch.palette !== undefined) setStickPalette(patch.palette);
     if (!pieceFresh.current && pieces.some((p) => p.id === pieceId && p.kind === "icon")) {
       snapPieces("");
       setPieces((list) => list.map((p) => (p.id === pieceId && p.kind === "icon" ? { ...p, ...patch } : p)));
+    }
+  }
+
+  /** Cambia color y estilo del texto: lo que se agregue de ahora en adelante y el texto seleccionado. */
+  function patchNote(patch: { color?: string; color2?: string; look?: "solid" | "gradient" | "rainbow"; palette?: string }) {
+    if (patch.color !== undefined) setNoteColor(patch.color);
+    if (patch.color2 !== undefined) setNoteColor2(patch.color2);
+    if (patch.look !== undefined) setNoteLook(patch.look);
+    if (patch.palette !== undefined) setNotePalette(patch.palette);
+    if (!pieceFresh.current && pieces.some((p) => p.id === pieceId && p.kind === "text")) {
+      snapPieces("");
+      setPieces((list) => list.map((p) => (p.id === pieceId && p.kind === "text" ? { ...p, ...patch } : p)));
     }
   }
 
@@ -1168,11 +1192,12 @@ export default function Editor({
       x,
       y,
       size: pieceSize,
+      rot: pieceRot,
       icon: stickIcon,
       text: noteText.trim().slice(0, 80),
       font: noteFont,
       color: kind === "icon" ? stickColor : noteColor,
-      ...(kind === "icon" ? { look: stickLook, color2: stickColor2 } : {}),
+      ...(kind === "icon" ? { look: stickLook, color2: stickColor2, palette: stickPalette } : { look: noteLook, color2: noteColor2, palette: notePalette }),
     };
     setPieces((list) => [...list, piece]);
     setPieceId(id);
@@ -2869,21 +2894,12 @@ export default function Editor({
             ) : tool === "stick" ? (
               <>
                 <IconPalette label="Íconos color" items={WM_COLOR_ICONS} isOn={(ch) => stickIcon === ch} onPick={pickStickIcon} prefix="Usar" />
-                <IconPalette label="Íconos trazo" items={WM_TRACE} isOn={(ch) => stickIcon === ch} onPick={pickStickIcon} prefix="Usar" />
-                <IconPalette label="Pack de íconos" items={LUCIDE_STICKERS} isOn={(ch) => stickIcon === ch} onPick={pickStickIcon} prefix="Usar" />
+                <FluentPalette isOn={(id) => stickIcon === id} onPick={pickStickIcon} />
+                <IconPalette label="Íconos trazo" items={WM_TRACE} isOn={(ch) => stickIcon === ch} onPick={pickStickIcon} prefix="Usar" ink={{ look: stickLook, c1: stickColor, c2: stickColor2, palette: stickPalette }} />
+                <IconPalette label="Pack de íconos" items={LUCIDE_STICKERS} isOn={(ch) => stickIcon === ch} onPick={pickStickIcon} prefix="Usar" ink={{ look: stickLook, c1: stickColor, c2: stickColor2, palette: stickPalette }} />
                 <Card title="Color y estilo">
-                  <div className="editor-seg" role="group" aria-label="Estilo del color">
-                    {([["solid", "Liso"], ["gradient", "Degradado"], ["rainbow", "Arcoíris"]] as const).map(([id, name]) => (
-                      <button key={id} type="button" className={stickLook === id ? "on" : ""} onClick={() => patchStick({ look: id })}>
-                        {name}
-                      </button>
-                    ))}
-                  </div>
-                  {stickLook !== "rainbow" && (
-                    <StickSwatches label={stickLook === "gradient" ? "Desde" : "Color"} value={stickColor} onPick={(hex) => patchStick({ color: hex })} />
-                  )}
-                  {stickLook === "gradient" && <StickSwatches label="Hasta" value={stickColor2} onPick={(hex) => patchStick({ color2: hex })} />}
-                  {WM_COLOR_ICONS.some((i) => i.ch === stickIcon) && <p className="hint">Los íconos de color ya traen sus colores; esto vale para los de trazo.</p>}
+                  <LookPicker look={stickLook} color={stickColor} color2={stickColor2} palette={stickPalette} onChange={patchStick} />
+                  {(WM_COLOR_ICONS.some((i) => i.ch === stickIcon) || stickIcon.startsWith("fe:")) && <p className="hint">Los íconos de color ya traen sus colores; esto vale para los de trazo.</p>}
                 </Card>
                 <Card title="Tamaño">
                 <OptRow
@@ -2896,6 +2912,20 @@ export default function Editor({
                     if (pieces.some((p) => p.id === pieceId)) {
                       snapPieces(`size${pieceId}`);
                       setPieces((list) => list.map((p) => (p.id === pieceId ? { ...p, size: n } : p)));
+                    }
+                  }}
+                />
+                <OptRow
+                  label="Giro"
+                  value={pieces.find((p) => p.id === pieceId)?.rot ?? pieceRot}
+                  min={-180}
+                  max={180}
+                  def={0}
+                  onChange={(n) => {
+                    setPieceRot(n);
+                    if (pieces.some((p) => p.id === pieceId)) {
+                      snapPieces(`rot${pieceId}`);
+                      setPieces((list) => list.map((p) => (p.id === pieceId ? { ...p, rot: n } : p)));
                     }
                   }}
                 />
@@ -2955,24 +2985,8 @@ export default function Editor({
                   ))}
                 </select>
 </Card>
-<Card title="Color">
-<div className="editor-swatches">
-                  {["#ffffff", "#111111", "#f2e6c8", "#e6c07b", "#d45b5b", "#8eb4e8"].map((hex) => (
-                    <button
-                      key={hex}
-                      type="button"
-                      className={`editor-swatch ${noteColor.toLowerCase() === hex ? "on" : ""}`}
-                      style={{ background: hex }}
-                      onClick={() => {
-                        setNoteColor(hex);
-                        if (!pieceFresh.current && pieces.some((p) => p.id === pieceId && p.kind === "text")) {
-                          snapPieces("");
-                          setPieces((list) => list.map((p) => (p.id === pieceId && p.kind === "text" ? { ...p, color: hex } : p)));
-                        }
-                      }}
-                    />
-                  ))}
-                </div>
+<Card title="Color y estilo">
+                  <LookPicker look={noteLook} color={noteColor} color2={noteColor2} palette={notePalette} onChange={patchNote} />
 </Card>
                 <Card title="Tamaño">
                 <OptRow
@@ -2985,6 +2999,20 @@ export default function Editor({
                     if (pieces.some((p) => p.id === pieceId)) {
                       snapPieces(`size${pieceId}`);
                       setPieces((list) => list.map((p) => (p.id === pieceId ? { ...p, size: n } : p)));
+                    }
+                  }}
+                />
+                <OptRow
+                  label="Giro"
+                  value={pieces.find((p) => p.id === pieceId)?.rot ?? pieceRot}
+                  min={-180}
+                  max={180}
+                  def={0}
+                  onChange={(n) => {
+                    setPieceRot(n);
+                    if (pieces.some((p) => p.id === pieceId)) {
+                      snapPieces(`rot${pieceId}`);
+                      setPieces((list) => list.map((p) => (p.id === pieceId ? { ...p, rot: n } : p)));
                     }
                   }}
                 />
@@ -3083,33 +3111,14 @@ export default function Editor({
                         ? "Color conserva su tono. Trazo sigue el color de abajo. Se repite en diagonal."
                         : "Color conserva su tono. Trazo sigue el color de abajo. Un solo sello."}
                     </p>
-                                        <Card title="Color" action={<b className="editor-hex">{wm.color}</b>}>
-                      <div className="editor-swatches">
-                      {[
-                        { hex: "#ffffff", tip: "Blanco" },
-                        { hex: "#111111", tip: "Negro" },
-                        { hex: "#f2e6c8", tip: "Cálido" },
-                        { hex: "#e6c07b", tip: "Dorado" },
-                        { hex: "#d45b5b", tip: "Rojo" },
-                        { hex: "#8eb4e8", tip: "Azul" },
-                      ].map((s) => (
-                        <button
-                          key={s.hex}
-                          type="button"
-                          className={`editor-swatch ${wm.color.toLowerCase() === s.hex ? "on" : ""}`}
-                          style={{ background: s.hex }}
-                          title={s.tip}
-                          onClick={() => setWm((w) => ({ ...w, color: s.hex }))}
-                        />
-                      ))}
-                      <input
-                        type="color"
-                        className="editor-color"
-                        value={/^#[0-9a-fA-F]{6}$/.test(wm.color) ? wm.color : "#ffffff"}
-                        title="Color libre"
-                        onChange={(e) => setWm((w) => ({ ...w, color: e.target.value }))}
+                                        <Card title="Color y estilo">
+                      <LookPicker
+                        look={wm.look ?? "solid"}
+                        color={wm.color}
+                        color2={wm.color2 ?? "#ff4fa3"}
+                        palette={wm.palette ?? "rainbow"}
+                        onChange={(patch) => setWm((w) => ({ ...w, ...patch }))}
                       />
-                    </div>
                     </Card>
                   </>
                 )}
@@ -3850,12 +3859,39 @@ function GlyphIcon({ name, size = 16 }: { name: Glyph; size?: number }) {
   );
 }
 
+type StickInk = { look: "solid" | "gradient" | "rainbow"; c1: string; c2: string; palette?: string };
+
+/** Paradas de color del estilo elegido (liso = una sola, degradado = dos, arcoíris = seis). */
+function inkStops(ink: StickInk): string[] {
+  if (ink.look === "rainbow") return [...paletteStops(ink.palette)];
+  if (ink.look === "gradient") return [ink.c1, ink.c2];
+  return [ink.c1];
+}
+
+/** Fondo CSS que representa el estilo (para puntos de muestra y para texto con degradado). */
+function inkCss(ink: StickInk): string {
+  const stops = inkStops(ink);
+  return stops.length === 1 ? stops[0] : `linear-gradient(135deg, ${stops.join(", ")})`;
+}
+
 /** Vista previa en la paleta de un ícono del pack (mismos trazos que se dibujan sobre la foto). */
-function LucideSticker({ icon }: { icon: string }) {
+function LucideSticker({ icon, ink }: { icon: string; ink?: StickInk }) {
   const node = lucideNode(icon);
+  const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
   if (!node) return null;
+  const stops = ink ? inkStops(ink) : [];
+  const stroke = ink ? (stops.length === 1 ? stops[0] : `url(#lg${uid})`) : "currentColor";
   return (
-    <svg viewBox="0 0 24 24" width={20} height={20} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg viewBox="0 0 24 24" width={20} height={20} fill="none" stroke={stroke} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      {ink && stops.length > 1 && (
+        <defs>
+          <linearGradient id={`lg${uid}`} gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="24" y2="24">
+            {stops.map((c, i) => (
+              <stop key={i} offset={i / (stops.length - 1)} stopColor={c} />
+            ))}
+          </linearGradient>
+        </defs>
+      )}
       {node.map(([tag, attrs], i) => {
         const Tag = tag as "path";
         return <Tag key={i} {...(attrs as object)} />;
@@ -3887,18 +3923,103 @@ function StickSwatches(props: { label: string; value: string; onPick: (hex: stri
   );
 }
 
+type LookId = "solid" | "gradient" | "rainbow";
+
+/** Selector de color y estilo: liso, degradado o multicolor (con sus paletas). Lo usan íconos, texto y marca de agua. */
+function LookPicker(props: {
+  look: LookId;
+  color: string;
+  color2: string;
+  palette: string;
+  onChange: (patch: { look?: LookId; color?: string; color2?: string; palette?: string }) => void;
+}) {
+  const { look, color, color2, palette, onChange } = props;
+  return (
+    <>
+      <div className="editor-seg" role="group" aria-label="Estilo del color">
+        {([["solid", "Liso"], ["gradient", "Degradado"], ["rainbow", "Arcoíris"]] as const).map(([id, name]) => (
+          <button key={id} type="button" className={look === id ? "on" : ""} title={name} onClick={() => onChange({ look: id })}>
+            <i className="look-dot" style={{ background: inkCss({ look: id, c1: color, c2: color2, palette }) }} />
+            {name}
+          </button>
+        ))}
+      </div>
+      {look === "rainbow" && (
+        <div className="palette-row" role="group" aria-label="Degradado multicolor">
+          {PALETTES.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className={`palette-chip ${palette === p.id ? "on" : ""}`}
+              style={{ background: `linear-gradient(90deg, ${p.stops.join(", ")})` }}
+              title={p.name}
+              aria-label={p.name}
+              onClick={() => onChange({ palette: p.id })}
+            />
+          ))}
+        </div>
+      )}
+      {look !== "rainbow" && <StickSwatches label={look === "gradient" ? "Desde" : "Color"} value={color} onPick={(hex) => onChange({ color: hex })} />}
+      {look === "gradient" && <StickSwatches label="Hasta" value={color2} onPick={(hex) => onChange({ color2: hex })} />}
+    </>
+  );
+}
+
+const plain = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+/** Emojis a color (Fluent Emoji Flat, Microsoft, MIT): por categoría o con buscador. Los SVG se cargan bajo demanda. */
+function FluentPalette(props: { isOn: (id: string) => boolean; onPick: (id: string) => void }) {
+  const [bodies, setBodies] = useState<Record<string, string> | null>(null);
+  const [cat, setCat] = useState(0);
+  const [query, setQuery] = useState("");
+  useEffect(() => {
+    let live = true;
+    void import("./fluentSvgs").then((m) => live && setBodies(m.FLUENT_BODIES));
+    return () => {
+      live = false;
+    };
+  }, []);
+  const q = plain(query.trim());
+  const items = q ? FLUENT_CATS.flatMap((c) => c.items).filter((i) => plain(i.tip).includes(q)) : FLUENT_CATS[cat].items;
+  return (
+    <Card title="Emojis a color">
+      <input className="editor-wm-text" value={query} placeholder="Buscar: corazón, gato, fiesta…" onChange={(e) => setQuery(e.target.value)} />
+      {!q && (
+        <div className="fe-cats" role="group" aria-label="Categorías">
+          {FLUENT_CATS.map((c, i) => (
+            <button key={c.name} type="button" className={i === cat ? "on" : ""} onClick={() => setCat(i)}>
+              {c.name}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="editor-wm-icons more fe-grid">
+        {items.length === 0 && <p className="hint">Sin resultados.</p>}
+        {items.map((i) => (
+          <button key={i.id} type="button" className={props.isOn(i.id) ? "on" : ""} title={`Usar ${i.tip}`} onClick={() => props.onPick(i.id)}>
+            {bodies && bodies[i.id.slice(3)] ? <img src={fluentSvgUrl(bodies[i.id.slice(3)], 48)} width={24} height={24} alt={i.tip} draggable={false} /> : null}
+          </button>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 function IconPalette({
   items,
   label,
   onPick,
   isOn,
   prefix,
+  ink,
 }: {
   items: readonly { readonly ch: string; readonly tip: string }[];
   label: string;
   onPick: (ch: string) => void;
   isOn?: (ch: string) => boolean;
   prefix: string;
+  /** Si se da, la vista previa muestra el color y estilo elegidos (solo íconos de trazo). */
+  ink?: StickInk;
 }) {
   const [more, setMore] = useState(false);
   return (
@@ -3919,7 +4040,22 @@ function IconPalette({
             title={`${prefix} ${icon.tip}`}
             onClick={() => onPick(icon.ch)}
           >
-            {lucideNode(icon.ch) ? <LucideSticker icon={icon.ch} /> : icon.ch}
+            {lucideNode(icon.ch) ? (
+              <LucideSticker icon={icon.ch} ink={ink} />
+            ) : ink ? (
+              <span
+                className="ink-glyph"
+                style={
+                  inkStops(ink).length === 1
+                    ? { color: ink.c1 }
+                    : { backgroundImage: inkCss(ink), WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }
+                }
+              >
+                {icon.ch}
+              </span>
+            ) : (
+              icon.ch
+            )}
           </button>
         ))}
       </div>
