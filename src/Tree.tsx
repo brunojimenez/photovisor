@@ -71,7 +71,7 @@ function Node(props: Props & { path: string; depth: number; label?: string; driv
   const known = props.path in props.children;
   return (
     <div>
-      <div className={props.current === props.path ? "node active" : "node"} style={{ paddingLeft: 8 + props.depth * 14 }}>
+      <div className={props.current === props.path ? "node active" : "node"} style={{ paddingLeft: 8 + props.depth * 14 }} data-drop={props.path}>
         <button className="twist" aria-label={open ? "Contraer" : "Expandir"} onClick={() => props.onToggle(props.path)}>
           {known && dirs.length === 0 ? "" : open ? "▾" : "▸"}
         </button>

@@ -14,6 +14,7 @@ Hecho con Tauri 2 (Rust y WebView2), React 19, TypeScript y Vite. El diseño ori
 - **Vistas:** lista, iconos medianos o iconos grandes (las carpetas crecen con las miniaturas). Orden por nombre, tipo o peso, ascendente o descendente.
 - **Carpetas con información:** cada carpeta dice qué tiene («3 carpetas · 12 fotos y videos · 2 otros archivos») y las vacías se ven atenuadas. Muestra **todos** los archivos, no solo las fotos: los demás se abren con el programa de Windows (los ejecutables y scripts se bloquean).
 - **Selección:** clic, Ctrl+clic, Mayús+clic para un rango, banda elástica, Ctrl+A y «seleccionar por tipo».
+- **Mover archivos y carpetas:** arrastra lo seleccionado hasta una carpeta del panel, del árbol o de la ruta (Esc cancela), o usa el botón **Mover a…** para elegir el destino. Si ya existe un archivo con ese nombre, el movido queda como «nombre (2)». Las valoraciones y etiquetas siguen a las fotos.
 - **Acciones:** copiar, cortar y pegar (Ctrl+C, X, V), renombrar con doble clic en el nombre, papelera con Supr (con aviso si la carpeta tiene contenido) y borrado directo con Mayús+Supr. Girar y voltear una o varias fotos a la vez (Ctrl + flechas).
 - **Valoración y etiquetas:** de 1 a 5 estrellas y cuatro colores de etiqueta, con filtro por valoración mínima y por etiqueta.
 - **Vista previa** de lo seleccionado (ajustada, 1:1 o a todo el ancho) y panel de herramientas lateral que se contrae.

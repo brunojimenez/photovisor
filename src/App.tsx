@@ -25,6 +25,7 @@ import {
   loadConfig,
   openRoot,
   pasteFiles,
+  moveTo,
   recycle,
   renameFile,
   saveConfig,
@@ -61,7 +62,7 @@ import { Tree } from "./Tree";
 import { Viewer } from "./Viewer";
 import {
   ChevronGlyph, CloseGlyph, CompareGlyph, CopyGlyph, CutGlyph, EditGlyph, SettingsGlyph, StampGlyph, SpinnerGlyph, ToolsGlyph, DownGlyph, FilterGlyph, FitGlyph, FolderGlyph, GridGlyph, LargeGlyph, LinesGlyph,
-  FileGlyph, NameGlyph, PanelGlyph, PasteGlyph, RatioGlyph, SelectTypeGlyph, SizeGlyph, StudioGlyph, TrashGlyph, TypeGlyph, UpGlyph,
+  FileGlyph, MoveGlyph, NameGlyph, PanelGlyph, PasteGlyph, RatioGlyph, SelectTypeGlyph, SizeGlyph, StudioGlyph, TrashGlyph, TypeGlyph, UpGlyph,
 } from "./icons";
 
 const VIEW = {
@@ -1155,6 +1156,42 @@ export default function App() {
     }
   }
 
+  /** Mueve lo indicado a `dest` (arrastrar y soltar, o «Mover a…»). */
+  async function moveInto(dest: string, paths: string[]) {
+    if (!current || current === COMPUTER || busy) return;
+    const list = paths.filter((path) => path !== dest);
+    if (list.length === 0) return;
+    setBusy(true);
+    try {
+      const report = await moveTo(dest, list);
+      await refresh(current, [], 0);
+      try {
+        rememberDirs(await listDir(dest));
+      } catch {
+        /* el destino puede no estar a la vista */
+      }
+      const name = dest.split(/[\\/]/).filter(Boolean).pop() ?? dest;
+      const n = report.done.length;
+      const parts: string[] = [];
+      if (n > 0) parts.push(`${n} movido${n === 1 ? "" : "s"} a «${name}».`);
+      if (report.skipped.length > 0) parts.push(report.skipped.length === 1 && n === 0 ? "Ya estaba en esa carpeta." : `${report.skipped.length} ya estaba${report.skipped.length === 1 ? "" : "n"} ahí.`);
+      if (report.errors.length > 0) parts.push(report.errors[0]);
+      setToast(parts.join(" ") || "Sin cambios");
+    } catch (error) {
+      setToast(String(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Elige la carpeta de destino con el selector de Windows y mueve ahí lo seleccionado. */
+  async function pickMoveDest() {
+    const paths = targets();
+    if (paths.length === 0 || !current || current === COMPUTER || busy) return;
+    const dest = await open({ directory: true, multiple: false, title: "Mover a…", defaultPath: current });
+    if (typeof dest === "string") await moveInto(dest, paths);
+  }
+
   function selectAll() {
     if (shown.length === 0) return;
     setSelected(shown.map((entry) => entry.path));
@@ -1443,6 +1480,7 @@ export default function App() {
                   <button title="Copiar (Ctrl+C)" aria-label="Copiar" onClick={() => copySelection(false)}><CopyGlyph /></button>
                   <button title="Cortar (Ctrl+X)" aria-label="Cortar" onClick={() => copySelection(true)}><CutGlyph /></button>
                   <button title="Pegar (Ctrl+V)" aria-label="Pegar" disabled={!clip} onClick={() => void doPaste()}><PasteGlyph /></button>
+                  <button title="Mover a otra carpeta… (o arrastra lo marcado hasta una carpeta)" aria-label="Mover a" disabled={busy || !current || current === COMPUTER || targets().length === 0} onClick={() => void pickMoveDest()}><MoveGlyph /></button>
                 </div>
                 <div className="seg" role="group" aria-label="Editar">
                   <button className="primary" title="Editar la foto (E)" aria-label="Editar" disabled={focused?.kind !== "image"} onClick={openEditor}><EditGlyph /></button>
@@ -1540,6 +1578,8 @@ export default function App() {
                   onStartRename={startRename}
                   onCommitRename={() => void commitRename()}
                   onCancelRename={cancelRename}
+                  dirPath={current}
+                  onMoveFiles={(paths, dest) => void moveInto(dest, paths)}
                   onOpen={(index) => {
                     const entry = shown[index];
                     setSelected([entry.path]);
@@ -2003,8 +2043,12 @@ function Grid(props: {
   onStartRename: (entry: Entry) => void;
   onCommitRename: () => void;
   onCancelRename: () => void;
+  /** Carpeta que se está viendo (no es un destino válido al arrastrar). */
+  dirPath: string | null;
+  onMoveFiles: (paths: string[], dest: string) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const suppressClick = useRef(false);
   const [range, setRange] = useState({ start: 0, end: 8, height: 600 });
   const [band, setBand] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   useEffect(() => {
@@ -2027,6 +2071,72 @@ function Grid(props: {
 
   const indexes: number[] = [];
   for (let row = range.start; row < range.end; row += 1) indexes.push(row);
+
+  /** Arrastrar archivos o carpetas hasta una carpeta del panel, del árbol o de la ruta para moverlos. */
+  function beginDrag(event: ReactPointerEvent, entry: Entry) {
+    if (event.button !== 0 || props.renaming || isDrive(entry)) return;
+    if ((event.target as HTMLElement).closest("input")) return;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let started = false;
+    let ghost: HTMLDivElement | null = null;
+    let over: HTMLElement | null = null;
+    let paths: string[] = [];
+    let cancelled = false;
+    const finish = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      window.removeEventListener("keydown", key);
+      over?.classList.remove("drop-over");
+      ghost?.remove();
+      document.body.classList.remove("dragging-files");
+    };
+    const move = (e: PointerEvent) => {
+      if (!started) {
+        if (Math.hypot(e.clientX - startX, e.clientY - startY) < 6) return;
+        started = true;
+        paths = props.selected.includes(entry.path) ? props.selected : [entry.path];
+        if (!props.selected.includes(entry.path)) props.onSelect([entry.path], false);
+        ghost = document.createElement("div");
+        ghost.className = "drag-ghost";
+        ghost.textContent = paths.length === 1 ? entry.name : `${paths.length} elementos`;
+        document.body.appendChild(ghost);
+        document.body.classList.add("dragging-files");
+      }
+      if (ghost) ghost.style.transform = `translate(${e.clientX + 14}px, ${e.clientY + 14}px)`;
+      const el = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>("[data-drop]") ?? null;
+      const dest = el?.dataset.drop;
+      const next = el && dest && dest !== props.dirPath && !paths.includes(dest) ? el : null;
+      if (next !== over) {
+        over?.classList.remove("drop-over");
+        next?.classList.add("drop-over");
+        over = next;
+      }
+    };
+    const end = () => {
+      const dest = over?.dataset.drop;
+      const moved = started && !cancelled;
+      finish();
+      if (!started) return;
+      suppressClick.current = true;
+      setTimeout(() => {
+        suppressClick.current = false;
+      }, 0);
+      if (moved && dest) props.onMoveFiles(paths, dest);
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        cancelled = true;
+        over?.classList.remove("drop-over");
+        over = null;
+      }
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    window.addEventListener("keydown", key);
+  }
 
   function onBackgroundDown(event: ReactPointerEvent) {
     if (event.button !== 0) return;
@@ -2095,8 +2205,14 @@ function Grid(props: {
                 <div
                   key={entry.path}
                   data-path={entry.path}
+                  data-drop={entry.kind === "dir" ? entry.path : undefined}
                   className={`cell ${props.iconSize}${props.selected.includes(entry.path) ? " selected" : ""}`}
-                  onClick={(event) => props.onClick(event, index)}
+                  onPointerDown={(event) => beginDrag(event, entry)}
+                  onDragStart={(event) => event.preventDefault()}
+                  onClick={(event) => {
+                    if (suppressClick.current) return;
+                    props.onClick(event, index);
+                  }}
                   onDoubleClick={() => props.onOpen(index)}
                 >
                   {entry.kind === "dir" ? (
@@ -2246,7 +2362,7 @@ function Thumb(props: {
   }, [props.entry.path, props.entry.modifiedMs, props.edge]);
   return (
     <div className="thumb" ref={ref}>
-      {props.src ? <img src={props.src} alt="" /> : <span>{props.entry.kind === "video" ? "Video" : ""}</span>}
+      {props.src ? <img src={props.src} alt="" draggable={false} /> : <span>{props.entry.kind === "video" ? "Video" : ""}</span>}
     </div>
   );
 }

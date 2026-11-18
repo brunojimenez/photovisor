@@ -110,6 +110,28 @@ impl Catalog {
         let _ = conn.execute("UPDATE photos SET path = ?2, dir = ?3 WHERE path = ?1", params![from, to, dir_of(to)]);
     }
 
+    /// Se movió una carpeta entera: todo lo que valía dentro de ella sigue a la nueva ruta.
+    pub fn rename_tree(&self, from: &str, to: &str) {
+        let conn = self.conn.lock().unwrap();
+        let prefix = format!("{from}\\");
+        let rows: Vec<String> = match conn.prepare("SELECT path FROM photos WHERE substr(path, 1, ?2) = ?1") {
+            Ok(mut stmt) => stmt
+                .query_map(params![prefix, prefix.chars().count() as i64], |row| row.get::<_, String>(0))
+                .map(|rows| rows.flatten().collect())
+                .unwrap_or_default(),
+            Err(_) => return,
+        };
+        for path in rows {
+            let Some(rest) = path.strip_prefix(&prefix) else { continue };
+            let new_path = format!("{to}\\{rest}");
+            let _ = conn.execute("DELETE FROM photos WHERE path = ?1", params![new_path]);
+            let _ = conn.execute(
+                "UPDATE photos SET path = ?2, dir = ?3 WHERE path = ?1",
+                params![path, new_path, dir_of(&new_path)],
+            );
+        }
+    }
+
     /// Una copia hereda la valoración y la etiqueta del original.
     pub fn copy(&self, from: &str, to: &str) {
         let conn = self.conn.lock().unwrap();
@@ -176,6 +198,21 @@ mod tests {
         assert_eq!(c.folder(r"C:\b").len(), 2);
         c.remove(&[s(r"C:\b\y.jpg")]);
         assert_eq!(c.folder(r"C:\b").len(), 1);
+    }
+
+    #[test]
+    fn mover_una_carpeta_arrastra_lo_que_valia_dentro() {
+        let c = Catalog::in_memory().unwrap();
+        c.set(&[s(r"C:\a\Fotos\x.jpg")], Some(4), Some("rojo")).unwrap();
+        c.set(&[s(r"C:\a\Fotos\sub\y.jpg")], Some(2), None).unwrap();
+        c.set(&[s(r"C:\a\Fotos2\z.jpg")], Some(1), None).unwrap();
+        c.rename_tree(r"C:\a\Fotos", r"C:\b\Fotos");
+        assert!(c.folder(r"C:\a\Fotos").is_empty());
+        assert!(c.folder(r"C:\a\Fotos\sub").is_empty());
+        assert_eq!(c.folder(r"C:\b\Fotos")[r"C:\b\Fotos\x.jpg"].rating, 4);
+        assert_eq!(c.folder(r"C:\b\Fotos\sub")[r"C:\b\Fotos\sub\y.jpg"].rating, 2);
+        // una carpeta de nombre parecido no se toca
+        assert_eq!(c.folder(r"C:\a\Fotos2")[r"C:\a\Fotos2\z.jpg"].rating, 1);
     }
 
     #[test]

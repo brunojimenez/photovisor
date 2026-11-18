@@ -416,6 +416,29 @@ async fn paste(
     Ok(report)
 }
 
+/// Mueve archivos o carpetas a otra carpeta (arrastrar y soltar, o «Mover a…»).
+#[tauri::command]
+async fn move_to(
+    state: tauri::State<'_, AppState>,
+    catalog: tauri::State<'_, Catalog>,
+    dest: String,
+    sources: Vec<String>,
+) -> Result<BatchReport, String> {
+    let root = root_of(&state)?;
+    let dest = PathBuf::from(dest);
+    let (report, moved) = tauri::async_runtime::spawn_blocking(move || files::move_into(&root, &dest, &sources))
+        .await
+        .map_err(|error| error.to_string())?;
+    for (from, to, is_dir) in &moved {
+        if *is_dir {
+            catalog.rename_tree(from, to);
+        } else {
+            catalog.rename(from, to);
+        }
+    }
+    Ok(report)
+}
+
 #[tauri::command]
 fn rename_file(
     state: tauri::State<AppState>,
@@ -719,7 +742,8 @@ pub fn run() {
             catalog_set,
             watch_folder,
             rename_file,
-            paste
+            paste,
+            move_to
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

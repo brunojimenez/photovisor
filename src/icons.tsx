@@ -1,7 +1,7 @@
 import {
   ArrowDown, ArrowDownAZ, File, FileArchive, FileAudio, FileCode, FileSpreadsheet, FileText, ArrowUp, ChevronLeft, ChevronRight, ClipboardPaste, Columns2, Copy, FileImage, LoaderCircle, SlidersHorizontal, Stamp, Settings, PanelRightClose, PanelRightOpen, Folder, HardDrive, LayoutGrid,
   Grid2x2, List, ListChecks, ListFilter, Maximize, Monitor, PanelLeftClose, PanelLeftOpen, RectangleHorizontal, Scissors, Star, Trash2,
-  Weight, WandSparkles, X, type LucideIcon, type LucideProps,
+  Weight, WandSparkles, X, type LucideIcon, type LucideProps, FolderInput,
 } from "lucide-react";
 
 /** Íconos del pack Lucide con el tamaño y grosor de trazo de la app. Los nombres se mantienen para no tocar los usos. */
@@ -17,6 +17,7 @@ export const CopyGlyph = () => <Copy {...base} />;
 export const SpinnerGlyph = () => <LoaderCircle {...base} className="spin" />;
 export const CutGlyph = () => <Scissors {...base} />;
 export const PasteGlyph = () => <ClipboardPaste {...base} />;
+export const MoveGlyph = () => <FolderInput {...base} />;
 export const TrashGlyph = () => <Trash2 {...base} />;
 export const CompareGlyph = () => <Columns2 {...base} />;
 export const CloseGlyph = () => <X {...base} />;

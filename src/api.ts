@@ -120,6 +120,11 @@ export function pasteFiles(dest: string, sources: string[], cut: boolean) {
   return invoke<BatchReport>("paste", { dest, sources, cut });
 }
 
+/** Mueve archivos o carpetas a otra carpeta. */
+export function moveTo(dest: string, sources: string[]) {
+  return invoke<BatchReport>("move_to", { dest, sources });
+}
+
 export function thumbnail(path: string, maxEdge: number, kind: "fast" | "sharp") {
   return invoke<string>("thumbnail", { path, maxEdge, kind });
 }

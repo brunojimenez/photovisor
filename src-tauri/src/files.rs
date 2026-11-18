@@ -703,6 +703,83 @@ fn paste_one(dest_dir: &Path, source: &Path, cut: bool) -> Result<PathBuf, Strin
     Ok(target)
 }
 
+/// Mueve archivos y carpetas a `dest_dir`.
+/// Devuelve lo que se movió como (de, a, es_carpeta) para que el catálogo siga a las fotos.
+/// Un archivo que ya está en el destino se omite; si el nombre existe, el movido queda como «nombre (2)».
+pub fn move_into(root: &Path, dest_dir: &Path, sources: &[String]) -> (BatchReport, Vec<(String, String, bool)>) {
+    let mut report = BatchReport {
+        done: Vec::new(),
+        skipped: Vec::new(),
+        errors: Vec::new(),
+    };
+    let mut moved = Vec::new();
+    let dest_dir = match canonical(dest_dir) {
+        Ok(path) if path.is_dir() => path,
+        _ => {
+            report.errors.push("la carpeta de destino no existe".into());
+            return (report, moved);
+        }
+    };
+    for raw in sources {
+        let label = Path::new(raw)
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_else(|| raw.clone());
+        let source = match ensure_inside(root, Path::new(raw)) {
+            Ok(path) => path,
+            Err(_) => {
+                report.errors.push(format!("{label}: fuera de la carpeta abierta"));
+                continue;
+            }
+        };
+        let is_dir = source.is_dir();
+        if is_dir && dest_dir.starts_with(&source) {
+            report.errors.push(format!("{label}: no se puede mover una carpeta dentro de sí misma"));
+            continue;
+        }
+        if source.parent() == Some(dest_dir.as_path()) {
+            report.skipped.push(nice_path(&source));
+            continue;
+        }
+        let Some(name) = source.file_name() else {
+            report.errors.push(format!("{label}: no tiene nombre"));
+            continue;
+        };
+        let target = if is_dir { unique_dir_name(&dest_dir, name) } else { unique_name(&dest_dir, name, false) };
+        let result = if is_dir {
+            fs::rename(&source, &target).map_err(|error| format!("{label}: no se pudo mover la carpeta ({error})"))
+        } else {
+            // Entre discos, rename falla: se copia y recién después se borra el original.
+            fs::rename(&source, &target)
+                .or_else(|_| fs::copy(&source, &target).and_then(|_| fs::remove_file(&source)))
+                .map_err(|error| format!("{label}: {error}"))
+        };
+        match result {
+            Ok(()) => {
+                moved.push((nice_path(&source), nice_path(&target), is_dir));
+                report.done.push(nice_path(&target));
+            }
+            Err(message) => report.errors.push(message),
+        }
+    }
+    (report, moved)
+}
+
+fn unique_dir_name(dir: &Path, name: &std::ffi::OsStr) -> PathBuf {
+    let first = dir.join(name);
+    if !first.exists() {
+        return first;
+    }
+    let base = name.to_string_lossy();
+    for index in 2..1000 {
+        let candidate = dir.join(format!("{base} ({index})"));
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    first
+}
+
 fn unique_name(dir: &Path, file_name: &std::ffi::OsStr, copy_suffix: bool) -> PathBuf {
     let path = Path::new(file_name);
     let stem = path.file_stem().and_then(|value| value.to_str()).unwrap_or("archivo");
@@ -1033,5 +1110,146 @@ mod mark_tests {
         assert!(second.to_string_lossy().ends_with("a-2.png"));
         assert_eq!(fs::read(&src).unwrap(), b"x", "el original no se toca");
         let _ = fs::remove_dir_all(&base);
+    }
+}
+
+#[cfg(test)]
+mod move_tests {
+    use super::*;
+
+    /// Carpeta temporal propia de cada prueba (se borra al final).
+    struct Temp(PathBuf);
+    impl Temp {
+        fn new(tag: &str) -> Self {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let dir = std::env::temp_dir().join(format!("pv-move-{tag}-{}-{nanos}", std::process::id()));
+            fs::create_dir_all(&dir).unwrap();
+            Temp(canonical(&dir).unwrap())
+        }
+        fn file(&self, rel: &str, body: &str) -> String {
+            let path = self.0.join(rel);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, body).unwrap();
+            nice_path(&path)
+        }
+        fn dir(&self, rel: &str) -> PathBuf {
+            let path = self.0.join(rel);
+            fs::create_dir_all(&path).unwrap();
+            path
+        }
+    }
+    impl Drop for Temp {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn moves_a_file_into_a_subfolder() {
+        let t = Temp::new("file");
+        let source = t.file("a.jpg", "uno");
+        let dest = t.dir("Viajes");
+        let (report, moved) = move_into(&t.0, &dest, &[source.clone()]);
+        assert_eq!(report.done.len(), 1, "{:?}", report.errors);
+        assert!(!Path::new(&source).exists());
+        assert_eq!(fs::read_to_string(dest.join("a.jpg")).unwrap(), "uno");
+        assert_eq!(moved.len(), 1);
+        assert!(!moved[0].2);
+    }
+
+    #[test]
+    fn a_name_clash_keeps_both_files() {
+        let t = Temp::new("clash");
+        let source = t.file("a.jpg", "nuevo");
+        let dest = t.dir("Viajes");
+        fs::write(dest.join("a.jpg"), "viejo").unwrap();
+        let (report, _) = move_into(&t.0, &dest, &[source]);
+        assert_eq!(report.done.len(), 1);
+        assert_eq!(fs::read_to_string(dest.join("a.jpg")).unwrap(), "viejo");
+        assert_eq!(fs::read_to_string(dest.join("a (2).jpg")).unwrap(), "nuevo");
+    }
+
+    #[test]
+    fn a_file_already_there_is_skipped() {
+        let t = Temp::new("same");
+        let source = t.file("Viajes/a.jpg", "x");
+        let dest = t.0.join("Viajes");
+        let (report, moved) = move_into(&t.0, &dest, &[source.clone()]);
+        assert_eq!(report.skipped.len(), 1);
+        assert!(report.done.is_empty() && moved.is_empty());
+        assert!(Path::new(&source).exists());
+    }
+
+    #[test]
+    fn moves_a_whole_folder_with_its_content() {
+        let t = Temp::new("dir");
+        t.file("Fotos/uno.jpg", "1");
+        t.file("Fotos/sub/dos.jpg", "2");
+        let dest = t.dir("Archivo");
+        let source = nice_path(&t.0.join("Fotos"));
+        let (report, moved) = move_into(&t.0, &dest, &[source]);
+        assert_eq!(report.done.len(), 1, "{:?}", report.errors);
+        assert!(!t.0.join("Fotos").exists());
+        assert_eq!(fs::read_to_string(dest.join("Fotos/sub/dos.jpg")).unwrap(), "2");
+        assert!(moved[0].2);
+    }
+
+    #[test]
+    fn a_folder_cannot_go_inside_itself() {
+        let t = Temp::new("self");
+        t.file("Fotos/sub/x.jpg", "x");
+        let source = nice_path(&t.0.join("Fotos"));
+        let inside = t.0.join("Fotos/sub");
+        let (report, _) = move_into(&t.0, &inside, &[source.clone()]);
+        assert_eq!(report.errors.len(), 1);
+        assert!(Path::new(&source).exists());
+        let (report, _) = move_into(&t.0, &t.0.join("Fotos"), &[source]);
+        assert_eq!(report.errors.len(), 1);
+    }
+
+    #[test]
+    fn a_folder_name_clash_gets_a_number() {
+        let t = Temp::new("dirclash");
+        t.file("Fotos/a.jpg", "a");
+        t.file("Archivo/Fotos/b.jpg", "b");
+        let source = nice_path(&t.0.join("Fotos"));
+        let (report, _) = move_into(&t.0, &t.0.join("Archivo"), &[source]);
+        assert_eq!(report.done.len(), 1, "{:?}", report.errors);
+        assert!(t.0.join("Archivo/Fotos/b.jpg").exists());
+        assert!(t.0.join("Archivo/Fotos (2)/a.jpg").exists());
+    }
+
+    #[test]
+    fn refuses_things_outside_the_open_folder() {
+        let outer = Temp::new("outer");
+        let inner_root = outer.dir("abierta");
+        let stray = outer.file("afuera/x.jpg", "x");
+        let dest = outer.dir("abierta/Destino");
+        let (report, moved) = move_into(&inner_root, &dest, &[stray.clone()]);
+        assert_eq!(report.errors.len(), 1);
+        assert!(moved.is_empty());
+        assert!(Path::new(&stray).exists());
+    }
+
+    #[test]
+    fn a_missing_destination_is_an_error() {
+        let t = Temp::new("nodest");
+        let source = t.file("a.jpg", "x");
+        let (report, _) = move_into(&t.0, &t.0.join("no-existe"), &[source.clone()]);
+        assert_eq!(report.errors.len(), 1);
+        assert!(Path::new(&source).exists());
+    }
+
+    #[test]
+    fn moves_files_of_any_kind_not_only_photos() {
+        let t = Temp::new("kind");
+        let source = t.file("notas.txt", "hola");
+        let dest = t.dir("Docs");
+        let (report, _) = move_into(&t.0, &dest, &[source]);
+        assert_eq!(report.done.len(), 1, "{:?}", report.errors);
+        assert!(dest.join("notas.txt").exists());
     }
 }

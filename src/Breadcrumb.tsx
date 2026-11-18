@@ -72,7 +72,7 @@ export function Breadcrumb(props: { path: string | null; onGo: (path: string) =>
           {more && (
             <div className="menu crumb-menu" role="menu">
               {hidden.map((crumb) => (
-                <button key={crumb.path} onClick={() => { setMore(false); props.onGo(crumb.path); }}>
+                <button key={crumb.path} data-drop={crumb.path === COMPUTER ? undefined : crumb.path} onClick={() => { setMore(false); props.onGo(crumb.path); }}>
                   {crumb.label}
                 </button>
               ))}
@@ -87,6 +87,7 @@ export function Breadcrumb(props: { path: string | null; onGo: (path: string) =>
           <button
             key={crumb.path}
             type="button"
+            data-drop={crumb.path === COMPUTER ? undefined : crumb.path}
             className={`crumb${first ? " first" : ""}${last ? " current" : ""}`}
             title={crumb.path === COMPUTER ? "Este equipo" : crumb.path}
             aria-current={last ? "page" : undefined}

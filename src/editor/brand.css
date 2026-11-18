@@ -329,3 +329,17 @@ input[type="range"], input[type="checkbox"], input[type="radio"] { accent-color:
 /* punto de "con cambios" en las pestañas de herramientas */
 .editor-tools .btn-ghost { position: relative; }
 .tab-dot { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: #8ab4f8; box-shadow: 0 0 0 2px #0f0b1a; }
+
+/* mover archivos arrastrándolos */
+.drag-ghost {
+  position: fixed; left: 0; top: 0; z-index: 9999; pointer-events: none;
+  max-width: 280px; padding: 6px 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 12px; font-weight: 600; color: #fff; border-radius: 10px;
+  background: linear-gradient(135deg, #9b5cf0, #d658ff); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+body.dragging-files, body.dragging-files * { cursor: grabbing !important; user-select: none !important; }
+.drop-over { outline: 2px solid #d658ff; outline-offset: -2px; background: rgba(214, 88, 255, 0.22) !important; border-radius: 8px; }
+
+/* las miniaturas no se arrastran solas: el arrastre es el de mover archivos */
+.cell, .cell * { -webkit-user-drag: none; user-select: none; }
+.cell .thumb img { pointer-events: none; }
