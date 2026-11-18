@@ -1,10 +1,11 @@
-import { ArrowLeft, Bandage, Brush, ClipboardCopy, Crop, Download, Eraser, Eye, FlipHorizontal2, FlipVertical2, type LucideIcon, Maximize, MoveHorizontal, MoveVertical, Paintbrush, Palette, Pencil, Pipette, Replace, RotateCcw, RotateCcwSquare, RotateCwSquare, Save, SaveAll, Scaling, SlidersHorizontal, Smile, Square, Stamp, Type, WandSparkles, Wrench } from "lucide-react";
+import { ArrowLeft, Bandage, Brush, ClipboardCopy, Crop, Download, Eraser, Eye, FlipHorizontal2, FlipVertical2, type LucideIcon, Maximize, MoveHorizontal, MoveVertical, Paintbrush, Palette, Pencil, Pipette, Replace, RotateCcw, RotateCcwSquare, RotateCwSquare, Save, SaveAll, Scaling, SlidersHorizontal, Smile, Spline, Square, Stamp, Type, WandSparkles, Wrench } from "lucide-react";
 import { type Adjust } from "./editorAdjust";
 
 export type Glyph =
   | "tools"
   | "reset"
   | "adjust"
+  | "curves"
   | "crop"
   | "style"
   | "eyedrop"
@@ -52,7 +53,7 @@ export type Glyph =
 
 /** Íconos del pack Lucide; los que no están aquí siguen con el dibujo propio de abajo. */
 export const LUCIDE: Partial<Record<Glyph, LucideIcon>> = {
-  tools: Wrench, reset: RotateCcw, adjust: SlidersHorizontal, crop: Crop, style: Palette, eyedrop: Pipette, heal: Bandage, back: ArrowLeft,
+  tools: Wrench, reset: RotateCcw, adjust: SlidersHorizontal, curves: Spline, crop: Crop, style: Palette, eyedrop: Pipette, heal: Bandage, back: ArrowLeft,
   save: Save, savecopy: SaveAll, clipboard: ClipboardCopy, download: Download, paint: Paintbrush, stick: Smile, text: Type, wm: Stamp,
   ai: WandSparkles, replace: Replace, upscale: Scaling, eraser: Eraser, brush: Brush, pencil: Pencil, rotl: RotateCcwSquare,
   rotr: RotateCwSquare, fliph: FlipHorizontal2, flipv: FlipVertical2, fith: MoveHorizontal, fitv: MoveVertical, fitbox: Maximize,

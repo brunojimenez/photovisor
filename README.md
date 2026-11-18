@@ -13,6 +13,24 @@ Hecho con Tauri 2 (Rust y WebView2), React 19, TypeScript y Vite. El diseño ori
 - **Duplicados**, **EXIF** legible con opción de quitar el GPS, y guardado en JPEG, PNG, WebP y AVIF.
 - Con ComfyUI instalado aparte, el editor suma funciones de IA (fondo, ampliar, estilos). Sin él, todo lo demás funciona igual.
 
+## Capturas
+
+<!-- Cuando estén las imágenes en docs/capturas/ (ver docs/capturas/LEEME.md), quita estos comentarios.
+     Las capturas usan solo las imágenes de muestra de docs/muestras/, que son creaciones propias.
+
+| | |
+|---|---|
+| ![Explorador](docs/capturas/explorador.png) | ![Visor](docs/capturas/visor.png) |
+| **Explorador:** árbol, iconos y ruta navegable | **Visor:** pantalla completa, editar y eliminar |
+| ![Ajustes](docs/capturas/editor-ajustes.png) | ![Curvas](docs/capturas/editor-curvas.png) |
+| **Editor:** luz, color y detalle | **Curvas y niveles** con histograma |
+| ![Foco](docs/capturas/editor-foco.png) | ![Íconos](docs/capturas/editor-iconos.png) |
+| **Foco:** zona nítida y el resto difuminado | **Íconos y emojis** de color |
+| ![Marca de agua](docs/capturas/marca-de-agua.png) | ![Duplicados](docs/capturas/duplicados.png) |
+| **Marca de agua** en lote | **Duplicados** por grupos |
+
+-->
+
 ## Desarrollo
 
 Requisitos: Node 22+ y, para compilar el programa, Rust (stable) con las herramientas de Tauri para Windows.

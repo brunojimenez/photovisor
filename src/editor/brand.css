@@ -324,3 +324,8 @@ input[type="range"], input[type="checkbox"], input[type="radio"] { accent-color:
   touch-action: none;
   cursor: crosshair;
 }
+
+
+/* punto de "con cambios" en las pestañas de herramientas */
+.editor-tools .btn-ghost { position: relative; }
+.tab-dot { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: #8ab4f8; box-shadow: 0 0 0 2px #0f0b1a; }

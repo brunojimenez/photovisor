@@ -44,9 +44,6 @@ export type Adjust = {
   /** Grano de película: cantidad y tamaño (el tamaño es relativo al ancho de la foto). */
   grain: number;
   grainSize: number;
-  /** Estilo rápido (1 cómic, 2 óleo, 3 boceto, 4 acuarela; 0 = ninguno) y su intensidad. */
-  style: number;
-  styleAmt: number;
   /** Curvas (por canal) y niveles. Opcionales: sin ellos la foto no cambia. */
   curves?: Curves;
   levels?: Levels;
@@ -80,14 +77,12 @@ export const ADJUST_ZERO: Adjust = {
   bwHue: 35,
   grain: 0,
   grainSize: 40,
-  style: 0,
-  styleAmt: 70,
   ...(Object.fromEntries(HSL_KEYS.map((k) => [k, 0])) as Record<HslKey, number>),
 };
 
 export function adjustIdle(a: Adjust) {
   // el matiz del virado y el tamaño del grano no cuentan: sin virado o sin grano no hacen nada
-  return (Object.keys(ADJUST_ZERO) as NumKey[]).every((k) => k === "bwHue" || k === "grainSize" || k === "styleAmt" || !a[k]) && !toneLuts(a.curves, a.levels);
+  return (Object.keys(ADJUST_ZERO) as NumKey[]).every((k) => k === "bwHue" || k === "grainSize" || !a[k]) && !toneLuts(a.curves, a.levels);
 }
 
 function clamp(n: number, lo = 0, hi = 255) {
@@ -246,173 +241,6 @@ function denoisePass(data: Uint8ClampedArray, w: number, h: number, luma: number
       for (let i = 0, p = ch; i < n; i++, p += 4) {
         const d = plane[i] - soft[i];
         data[p] = clamp(soft[i] + d * ((d * d) / (d * d + s2)));
-      }
-    }
-  }
-}
-
-export const STYLE_KINDS = [
-  { id: 1, label: "Cómic" },
-  { id: 2, label: "Óleo" },
-  { id: 3, label: "Boceto" },
-  { id: 4, label: "Acuarela" },
-] as const;
-
-function smoothstep(e: number, a: number, b: number) {
-  const t = Math.max(0, Math.min(1, (e - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-}
-
-function lumaOf(data: Uint8ClampedArray) {
-  const n = data.length / 4;
-  const L = new Float32Array(n);
-  for (let i = 0, p = 0; i < n; i++, p += 4) L[i] = 0.2126 * data[p] + 0.7152 * data[p + 1] + 0.0722 * data[p + 2];
-  return L;
-}
-
-/**
- * Kuwahara: cada píxel toma el color medio del cuadrante vecino más uniforme. Aplana las zonas y conserva los
- * bordes, que es lo que da el aspecto pintado. Medias y varianzas salen de cajas desplazadas (coste lineal).
- */
-function kuwahara(data: Uint8ClampedArray, w: number, h: number, k: number) {
-  const n = w * h;
-  const R = new Float32Array(n);
-  const G = new Float32Array(n);
-  const B = new Float32Array(n);
-  const L = new Float32Array(n);
-  const L2 = new Float32Array(n);
-  for (let i = 0, p = 0; i < n; i++, p += 4) {
-    R[i] = data[p];
-    G[i] = data[p + 1];
-    B[i] = data[p + 2];
-    const l = 0.2126 * R[i] + 0.7152 * G[i] + 0.0722 * B[i];
-    L[i] = l;
-    L2[i] = l * l;
-  }
-  const mR = boxBlur(R, w, h, k);
-  const mG = boxBlur(G, w, h, k);
-  const mB = boxBlur(B, w, h, k);
-  const mL = boxBlur(L, w, h, k);
-  const mL2 = boxBlur(L2, w, h, k);
-  const out = new Uint8ClampedArray(data.length);
-  const dx = [-k, k, -k, k];
-  const dy = [-k, -k, k, k];
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let best = Infinity;
-      let pick = y * w + x;
-      for (let q = 0; q < 4; q++) {
-        const xx = Math.min(w - 1, Math.max(0, x + dx[q]));
-        const yy = Math.min(h - 1, Math.max(0, y + dy[q]));
-        const idx = yy * w + xx;
-        const v = mL2[idx] - mL[idx] * mL[idx];
-        if (v < best) {
-          best = v;
-          pick = idx;
-        }
-      }
-      const o = (y * w + x) * 4;
-      out[o] = mR[pick];
-      out[o + 1] = mG[pick];
-      out[o + 2] = mB[pick];
-      out[o + 3] = 255;
-    }
-  }
-  return out;
-}
-
-/** Líneas de tinta: diferencia entre dos desenfoques de la luminancia. 0 = sin línea, 1 = línea. */
-function inkLines(src: Uint8ClampedArray, w: number, h: number, scale: number, lo: number, hi: number) {
-  const L = lumaOf(src);
-  const fine = boxBlur(L, w, h, Math.max(1, Math.round(scale)));
-  const wide = boxBlur(L, w, h, Math.max(2, Math.round(3 * scale)));
-  const line = new Float32Array(L.length);
-  for (let i = 0; i < line.length; i++) line[i] = smoothstep(Math.abs(fine[i] - wide[i]), lo, hi);
-  return line;
-}
-
-/** El estilo aplicado a una franja de la foto. `scale` es el ancho de la foto entre 1000 px: el aspecto no depende de la resolución. */
-function styleBand(src: Uint8ClampedArray, w: number, h: number, kind: number, scale: number, rowOffset: number) {
-  const n = w * h;
-  if (kind === 3) {
-    // boceto a lápiz: «color dodge» de la luminancia contra su negativo desenfocado
-    const L = lumaOf(src);
-    const inv = new Float32Array(n);
-    for (let i = 0; i < n; i++) inv[i] = 255 - L[i];
-    const soft = boxBlur(inv, w, h, Math.max(3, Math.round(7 * scale)));
-    const out = new Uint8ClampedArray(src.length);
-    for (let i = 0, p = 0; i < n; i++, p += 4) {
-      const g = Math.min(255, (L[i] * 255) / Math.max(1, 255 - soft[i]));
-      out[p] = g;
-      out[p + 1] = g * 0.985;
-      out[p + 2] = g * 0.95;
-      out[p + 3] = 255;
-    }
-    return out;
-  }
-  const k = kind === 1 ? Math.max(1, Math.round(2 * scale)) : kind === 2 ? Math.max(2, Math.round(4 * scale)) : Math.max(2, Math.round(3 * scale));
-  const out = kuwahara(src, w, h, k);
-  const lines = kind === 1 ? inkLines(src, w, h, scale, 3, 12) : kind === 4 ? inkLines(src, w, h, scale, 4, 16) : null;
-  for (let i = 0, p = 0; i < n; i++, p += 4) {
-    let r = out[p];
-    let g = out[p + 1];
-    let b = out[p + 2];
-    const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    if (kind === 1) {
-      // cómic: colores intensos en pocos tonos y contorno negro
-      r = y + (r - y) * 1.3;
-      g = y + (g - y) * 1.3;
-      b = y + (b - y) * 1.3;
-      r = Math.round(clamp(r) / 51) * 51;
-      g = Math.round(clamp(g) / 51) * 51;
-      b = Math.round(clamp(b) / 51) * 51;
-      const ink = 1 - (lines as Float32Array)[i] * 0.92;
-      r *= ink;
-      g *= ink;
-      b *= ink;
-    } else if (kind === 2) {
-      // óleo: pinceladas y color algo más vivo
-      r = (y + (r - y) * 1.12 - 128) * 1.06 + 128;
-      g = (y + (g - y) * 1.12 - 128) * 1.06 + 128;
-      b = (y + (b - y) * 1.12 - 128) * 1.06 + 128;
-    } else {
-      // acuarela: lavado claro, menos saturado, contorno tenue marrón y grano de papel
-      r = 255 - (255 - (y + (r - y) * 0.9)) * 0.86;
-      g = 255 - (255 - (y + (g - y) * 0.9)) * 0.86;
-      b = 255 - (255 - (y + (b - y) * 0.9)) * 0.86;
-      const edge = (lines as Float32Array)[i] * 0.35;
-      r = r * (1 - edge) + 70 * edge;
-      g = g * (1 - edge) + 50 * edge;
-      b = b * (1 - edge) + 40 * edge;
-      const paper = grainNoise(i % w, rowOffset + ((i / w) | 0), Math.max(1.5, 2 * scale)) * 4;
-      r += paper;
-      g += paper;
-      b += paper;
-    }
-    out[p] = clamp(r);
-    out[p + 1] = clamp(g);
-    out[p + 2] = clamp(b);
-  }
-  return out;
-}
-
-/** Aplica el estilo por franjas con margen, para no gastar memoria con fotos grandes. `amount` va de 0 a 1. */
-function stylePass(data: Uint8ClampedArray, w: number, h: number, kind: number, amount: number) {
-  const scale = Math.max(0.5, w / 1000);
-  const halo = Math.ceil(10 * scale) + 2;
-  const BAND = 256;
-  const src = new Uint8ClampedArray(data);
-  for (let y0 = 0; y0 < h; y0 += BAND) {
-    const a = Math.max(0, y0 - halo);
-    const b = Math.min(h, y0 + BAND + halo);
-    const styled = styleBand(src.slice(a * w * 4, b * w * 4), w, b - a, kind, scale, a);
-    for (let y = y0; y < Math.min(h, y0 + BAND); y++) {
-      for (let x = 0; x < w; x++) {
-        const i = (y * w + x) * 4;
-        const j = ((y - a) * w + x) * 4;
-        data[i] = src[i] + (styled[j] - src[i]) * amount;
-        data[i + 1] = src[i + 1] + (styled[j + 1] - src[i + 1]) * amount;
-        data[i + 2] = src[i + 2] + (styled[j + 2] - src[i + 2]) * amount;
       }
     }
   }
@@ -670,5 +498,4 @@ export function applyAdjust(data: Uint8ClampedArray, w: number, h: number, input
     data[p + 1] = clamp(g);
     data[p + 2] = clamp(b);
   }
-  if (a.style > 0 && a.styleAmt > 0) stylePass(data, w, h, a.style, a.styleAmt / 100);
 }

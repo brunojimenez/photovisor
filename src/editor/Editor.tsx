@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { Aperture, Check, Eraser, Focus, OctagonX, Redo2, Rows3, Undo2, UserRound } from "lucide-react";
-import { type Adjust, ADJUST_ZERO, adjustIdle, applyAdjust, type Band, HSL_BANDS, type HslKey, type NumKey, STYLE_KINDS } from "./editorAdjust";
+import { type Adjust, ADJUST_ZERO, adjustIdle, type Band, HSL_BANDS, type HslKey, type NumKey } from "./editorAdjust";
 import { presetAdjust, PRESETS } from "./editorPresets";
 import { lucideNode } from "./lucideStickers";
 import { drawPieces, drawWatermark, installedFonts, onFluentReady, type Piece, type Watermark, watermarkIdle } from "./editorMark";
 import { applyPaint, cloneCanvas, eraseOverlay, type PaintFx } from "./editorPaint";
 import { createAdjustRunner, type AdjustRunner } from "./adjustClient";
 import { CurveEditor } from "./CurveEditor";
-import { autoLevels, histogramOf, LEVELS_ZERO, levelsIdle, type Curves, type Histogram, type Levels } from "./editorCurves";
+import { autoLevels, histogramOf, LEVELS_ZERO, levelsIdle, toneLuts, type Curves, type Histogram, type Levels } from "./editorCurves";
 import { ASYNC_MIN_PIXELS, clampCrop, clampZoom, drawMarco, type CropBox, fitRatio, type Handle, raster, workingSize } from "./editorGeometry";
 import { loadWm } from "./editorWm";
 import { drawFocusMask, focusEditApply, focusFinishShape, focusHitTest, focusPresetShape, focusScale as focusScaleFor, invertAlpha, type FocusShape } from "./editorFocus";
@@ -19,7 +19,7 @@ import { WatermarkDesigner } from "./WatermarkDesigner";
 import { AdjRow, Card, OptRow, SliderRow } from "./EditorUi";
 
 type Mark = "pencil" | "brush" | "eraser";
-type Tool = "adjust" | "crop" | "paint" | "stick" | "text" | "fill" | "wm";
+type Tool = "adjust" | "curves" | "crop" | "paint" | "stick" | "text" | "fill" | "wm";
 
 type AiMode = "blur" | "solid" | "replace" | "upscale" | "style";
 
@@ -268,36 +268,6 @@ export default function Editor({
   const [aiMode, setAiMode] = useState<AiMode>(startAiMode ?? "blur");
   const [upScale, setUpScale] = useState(2);
   const [styleId, setStyleId] = useState("cartoon");
-  const [quickThumbs, setQuickThumbs] = useState<Record<string, string>>({});
-  useEffect(() => {
-    const sample = styleThumbs?.original;
-    if (!sample) return;
-    let alive = true;
-    const img = new Image();
-    img.onload = () => {
-      if (!alive) return;
-      const out: Record<string, string> = {};
-      const draw = (adjust: Adjust) => {
-        const cv = document.createElement("canvas");
-        cv.width = 256;
-        cv.height = 256;
-        const cx = cv.getContext("2d");
-        if (!cx) return "";
-        cx.drawImage(img, 0, 0, 256, 256);
-        const px = cx.getImageData(0, 0, 256, 256);
-        applyAdjust(px.data, 256, 256, adjust);
-        cx.putImageData(px, 0, 0);
-        return cv.toDataURL("image/jpeg", 0.85);
-      };
-      out["0"] = sample;
-      for (const s of STYLE_KINDS) out[String(s.id)] = draw({ ...ADJUST_ZERO, style: s.id, styleAmt: 70 });
-      setQuickThumbs(out);
-    };
-    img.src = sample;
-    return () => {
-      alive = false;
-    };
-  }, [styleThumbs?.original]);
   const [stylePrompt, setStylePrompt] = useState("");
   const [styleGuidance, setStyleGuidance] = useState(2.5);
   const [styleCount, setStyleCount] = useState(1);
@@ -1445,7 +1415,7 @@ export default function Editor({
 
   // Histograma de la foto sin ajustes (miniatura de 256 px): fondo de las curvas y base de los niveles automáticos
   useEffect(() => {
-    if (!ready || tool !== "adjust") return;
+    if (!ready || (tool !== "adjust" && tool !== "curves")) return;
     const im = imgRef.current;
     if (!im) return;
     const { w: W, h: H } = workingSize(im.naturalWidth, im.naturalHeight, rot);
@@ -2527,6 +2497,10 @@ export default function Editor({
               <button type="button" className={`btn-ghost ${tool === "adjust" ? "on" : ""}`} title="Ajustar" aria-label="Ajustar" onClick={() => setTool("adjust")}>
                 <GlyphIcon name="tools" size={20} />
               </button>
+              <button type="button" className={`btn-ghost ${tool === "curves" ? "on" : ""}`} title="Curvas y niveles" aria-label="Curvas" onClick={() => setTool("curves")}>
+                <GlyphIcon name="curves" size={20} />
+                {toneLuts(adj.curves, adj.levels) !== null && <i className="tab-dot" aria-label="con cambios" />}
+              </button>
               <button type="button" className={`btn-ghost ${tool === "crop" ? "on" : ""}`} title="Posición (recortar, girar y voltear)" aria-label="Posición" onClick={() => setTool("crop")}>
                 <GlyphIcon name="crop" size={20} />
               </button>
@@ -2625,6 +2599,33 @@ export default function Editor({
                     })}
                   </Card>
                 ))}
+                <Card title="Color por tono">
+                    <div className="editor-hsl-dots" role="group" aria-label="Tono a ajustar">
+                      {HSL_BANDS.map((band) => {
+                        const touched = (["h", "s", "l"] as const).some((k) => adj[`${k}_${band.id}` as HslKey] !== 0);
+                        return (
+                          <button
+                            key={band.id}
+                            type="button"
+                            className={`editor-hsl-dot ${hslBand === band.id ? "on" : ""} ${touched ? "touched" : ""}`}
+                            style={{ background: band.color }}
+                            title={band.label}
+                            aria-label={band.label}
+                            onClick={() => setHslBand(band.id)}
+                          />
+                        );
+                      })}
+                    </div>
+                    <SliderRow icon="tint" label="Tono" value={adj[`h_${hslBand}` as HslKey]} min={-100} max={100} def={0} hint="Desplaza el color hacia el vecino" onChange={(n) => setAdjKey(`h_${hslBand}` as HslKey, n)} />
+                    <SliderRow icon="saturate" label="Saturación" value={adj[`s_${hslBand}` as HslKey]} min={-100} max={100} def={0} onChange={(n) => setAdjKey(`s_${hslBand}` as HslKey, n)} />
+                    <SliderRow icon="brightness" label="Luminosidad" value={adj[`l_${hslBand}` as HslKey]} min={-100} max={100} def={0} onChange={(n) => setAdjKey(`l_${hslBand}` as HslKey, n)} />
+                </Card>
+                <p className="hint">
+                  Viñeta y marco: izquierda blanco, centro nada, derecha negro. Rueda: zoom.
+                </p>
+              </>
+            ) : tool === "curves" ? (
+              <>
                 <Card
                   title="Curvas"
                   action={
@@ -2658,68 +2659,6 @@ export default function Editor({
                   <SliderRow icon="black" label="Salida negro" value={adj.levels?.outBlack ?? 0} min={0} max={255} def={0} hint="Sube el negro: da un look lavado, tipo película" onChange={(n) => setLevels({ outBlack: n })} />
                   <SliderRow icon="white" label="Salida blanco" value={adj.levels?.outWhite ?? 255} min={0} max={255} def={255} hint="Baja el blanco: evita blancos quemados" onChange={(n) => setLevels({ outWhite: n })} />
                 </Card>
-                <Card title="Color por tono">
-                    <div className="editor-hsl-dots" role="group" aria-label="Tono a ajustar">
-                      {HSL_BANDS.map((band) => {
-                        const touched = (["h", "s", "l"] as const).some((k) => adj[`${k}_${band.id}` as HslKey] !== 0);
-                        return (
-                          <button
-                            key={band.id}
-                            type="button"
-                            className={`editor-hsl-dot ${hslBand === band.id ? "on" : ""} ${touched ? "touched" : ""}`}
-                            style={{ background: band.color }}
-                            title={band.label}
-                            aria-label={band.label}
-                            onClick={() => setHslBand(band.id)}
-                          />
-                        );
-                      })}
-                    </div>
-                    <SliderRow icon="tint" label="Tono" value={adj[`h_${hslBand}` as HslKey]} min={-100} max={100} def={0} hint="Desplaza el color hacia el vecino" onChange={(n) => setAdjKey(`h_${hslBand}` as HslKey, n)} />
-                    <SliderRow icon="saturate" label="Saturación" value={adj[`s_${hslBand}` as HslKey]} min={-100} max={100} def={0} onChange={(n) => setAdjKey(`s_${hslBand}` as HslKey, n)} />
-                    <SliderRow icon="brightness" label="Luminosidad" value={adj[`l_${hslBand}` as HslKey]} min={-100} max={100} def={0} onChange={(n) => setAdjKey(`l_${hslBand}` as HslKey, n)} />
-                </Card>
-                <Card title="Blanco y negro">
-                    <SliderRow icon="opacity" label="Cantidad" value={adj.bw} min={0} max={100} def={0} onChange={(n) => setAdjKey("bw", n)} />
-                    <SliderRow icon="contrast" label="Filtro" value={adj.bwFilter} min={-100} max={100} def={0} hint="Como un filtro de cámara: a la izquierda oscurece los rojos, a la derecha los aclara" onChange={(n) => setAdjKey("bwFilter", n)} />
-                    <SliderRow icon="tint" label="Virado" value={adj.bwTone} min={0} max={100} def={0} hint="Tiñe los grises (sepia, cianotipo…)" onChange={(n) => setAdjKey("bwTone", n)} />
-                    <div className="editor-swatches">
-                      {[
-                        { label: "Sepia", hue: 35, color: "#b9814a" },
-                        { label: "Selenio", hue: 285, color: "#8a6fb0" },
-                        { label: "Cianotipo", hue: 205, color: "#3f7fb5" },
-                        { label: "Bosque", hue: 120, color: "#6a9a5a" },
-                      ].map((tone) => (
-                        <button
-                          key={tone.label}
-                          type="button"
-                          className={`editor-swatch ${adj.bwTone > 0 && adj.bwHue === tone.hue ? "on" : ""}`}
-                          style={{ background: tone.color }}
-                          title={`Virado ${tone.label.toLowerCase()}`}
-                          onClick={() => {
-                            setPresetId("");
-                            setAdj((a) => ({ ...a, bwHue: tone.hue, bwTone: a.bwTone || 45 }));
-                          }}
-                        />
-                      ))}
-                    </div>
-                    <SliderRow icon="tint" label="Matiz" value={adj.bwHue} min={0} max={360} def={35} onChange={(n) => setAdj((a) => ({ ...a, bwHue: n, bwTone: a.bwTone || 45 }))} />
-                </Card>
-                <Card title="Estilo rápido">
-                  <StyleTiles
-                    items={[{ id: 0, label: "Ninguno" }, ...STYLE_KINDS.map((s) => ({ id: s.id as number, label: s.label }))]}
-                    value={adj.style}
-                    thumbs={Object.keys(quickThumbs).length ? quickThumbs : undefined}
-                    onPick={(id) => setAdjKey("style", id)}
-                  />
-                  {adj.style > 0 && (
-                    <SliderRow icon="opacity" label="Intensidad" value={adj.styleAmt} min={0} max={100} def={70} onChange={(n) => setAdjKey("styleAmt", n)} />
-                  )}
-                  <p className="hint">Filtros al instante, sin IA. {local ? "Para un cartoon completo, abre la foto en el Studio." : "Para un cartoon completo usa IA → Estilo."}</p>
-                </Card>
-                <p className="hint">
-                  Viñeta y marco: izquierda blanco, centro nada, derecha negro. Rueda: zoom.
-                </p>
               </>
             ) : tool === "crop" ? (
               <>
@@ -3366,7 +3305,7 @@ export default function Editor({
                     </Card>
                     <p className="hint">
                       Usa Flux Kontext en ComfyUI. La foto sale a ~1 megapíxel (después puedes ampliarla en «Ampliar») y las caras
-                      pueden cambiar un poco. Para un resultado inmediato usa «Estilo rápido» en Ajustar.
+                      pueden cambiar un poco. 
                     </p>
                     <button
                       type="button"
