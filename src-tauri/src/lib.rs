@@ -86,6 +86,20 @@ fn open_in_studio(path: String) -> Result<(), String> {
     cmd.spawn().map(|_| ()).map_err(|e| format!("No pude abrir el Studio: {e}"))
 }
 
+/// Abre la página del proyecto en el navegador. La dirección es fija: no se acepta ninguna desde la interfaz.
+#[tauri::command]
+fn open_repo() -> Result<(), String> {
+    const REPO: &str = "https://github.com/brunojimenez/photovisor";
+    Command::new("explorer")
+        .arg(REPO)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("No pude abrir el navegador: {e}"))
+}
+
 /// Abre un archivo (que no es foto ni video) con el programa que Windows tenga para ese tipo.
 #[tauri::command]
 fn open_external(state: tauri::State<AppState>, path: String) -> Result<(), String> {
@@ -654,6 +668,7 @@ pub fn run() {
             launch_args,
             studio_info,
             open_in_studio,
+            open_repo,
             open_external,
             save_edit,
             suggest_tilt,

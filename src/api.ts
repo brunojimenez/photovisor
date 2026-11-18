@@ -92,6 +92,10 @@ export function openExternal(path: string) {
   return invoke<void>("open_external", { path });
 }
 
+export function openRepo() {
+  return invoke<void>("open_repo");
+}
+
 export function openInStudio(path: string) {
   return invoke<void>("open_in_studio", { path });
 }

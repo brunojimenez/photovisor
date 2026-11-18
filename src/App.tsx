@@ -1,4 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
+import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { ask, open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent as ReactPointerEvent } from "react";
@@ -16,6 +17,7 @@ import {
   launchArgs,
   studioInfo,
   openInStudio as openInStudioApi,
+  openRepo,
   listDir,
   listDrives,
   quickAccess,
@@ -157,6 +159,10 @@ export default function App() {
   });
   const [dupCount, setDupCount] = useState<number | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [appVersion, setAppVersion] = useState("");
+  useEffect(() => {
+    void getVersion().then(setAppVersion).catch(() => undefined);
+  }, []);
   const currentRef = useRef<string | null>(null);
   const [editorStart, setEditorStart] = useState<{ tool?: "fill"; mode?: "replace" }>({});
   const trail = useRef<string[]>([]);
@@ -1687,7 +1693,18 @@ export default function App() {
       {settingsOpen && (
         <div className="scrim" onPointerDown={(event) => event.target === event.currentTarget && setSettingsOpen(false)}>
           <div className="dialog settings" role="dialog" aria-modal="true" aria-label="Configuración">
-            <h2>Configuración</h2>
+            <div className="about">
+              <AppIcon size={72} />
+              <div>
+                <h2>PhotoVisor{appVersion ? <span className="about-ver"> v{appVersion}</span> : null}</h2>
+                <p className="about-note">
+                  Tus fotos se quedan en este equipo. Los ajustes y el catálogo se guardan solo aquí. Íconos: Lucide (ISC). Emojis: Fluent Emoji Flat de Microsoft (MIT).
+                </p>
+                <button type="button" className="about-link" title="Abrir github.com/brunojimenez/photovisor en el navegador" onClick={() => void openRepo().catch((error) => setToast(String(error)))}>
+                  github.com/brunojimenez/photovisor
+                </button>
+              </div>
+            </div>
             <div className="set-body">
               <section className="set-sec">
                 <h3>Apariencia</h3>
@@ -2135,6 +2152,28 @@ function folderSummary(entry: Entry) {
 function isCopyName(path: string) {
   const name = path.split(/[\\/]/).pop() ?? path;
   return /\s*\(\d+\)\.[^.]+$/.test(name) || /\s-\s(copia|copy)(\s*\(\d+\))?\.[^.]+$/i.test(name);
+}
+
+/** El ícono de la app (dos lentes sobre dos cachetes), el mismo de `src-tauri/icon-source.svg`. */
+function AppIcon({ size }: { size: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 128 128" aria-hidden="true" className="app-icon">
+      <defs>
+        <radialGradient id="appIconVol" cx="0.3" cy="0.25" r="0.95">
+          <stop offset="0" stopColor="#ff9cf6" />
+          <stop offset="0.55" stopColor="#d946ef" />
+          <stop offset="1" stopColor="#7c3aed" />
+        </radialGradient>
+      </defs>
+      <rect width="128" height="128" rx="28" fill="#14121c" />
+      <path d="M62 22 C42 16 8 34 8 72 C8 104 40 116 62 103 Z" fill="url(#appIconVol)" />
+      <path d="M66 22 C86 16 120 34 120 72 C120 104 88 116 66 103 Z" fill="url(#appIconVol)" />
+      <circle cx="39" cy="74" r="19" fill="#1b1633" stroke="#fff" strokeWidth="6" />
+      <circle cx="89" cy="74" r="19" fill="#1b1633" stroke="#fff" strokeWidth="6" />
+      <circle cx="32" cy="66" r="5" fill="#fff" />
+      <circle cx="82" cy="66" r="5" fill="#fff" />
+    </svg>
+  );
 }
 
 function DupThumb(props: { path: string }) {
