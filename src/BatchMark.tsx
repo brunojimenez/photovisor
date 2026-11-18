@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { WatermarkDesigner, loadWm } from "./editor/Editor";
+import { WatermarkDesigner } from "./editor/WatermarkDesigner";
+import { loadWm } from "./editor/editorWm";
 import { drawWatermark, watermarkIdle, type Watermark } from "./editor/editorMark";
 import { batchImages, mediaUrl, saveMarked, type Entry } from "./api";
 import { bytesToBase64 } from "./format";

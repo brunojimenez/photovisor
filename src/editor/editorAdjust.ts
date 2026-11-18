@@ -1,4 +1,5 @@
 /** Ajustes tipo Google Fotos. 0 = sin cambio. Rango típico -100…100. Sin librerías. */
+import { toneLuts, type Curves, type Levels } from "./editorCurves";
 
 /** Ocho tonos para el ajuste por color (HSL). `hue` es el centro de cada banda en grados. */
 export const HSL_BANDS = [
@@ -46,7 +47,13 @@ export type Adjust = {
   /** Estilo rápido (1 cómic, 2 óleo, 3 boceto, 4 acuarela; 0 = ninguno) y su intensidad. */
   style: number;
   styleAmt: number;
+  /** Curvas (por canal) y niveles. Opcionales: sin ellos la foto no cambia. */
+  curves?: Curves;
+  levels?: Levels;
 } & Record<HslKey, number>;
+
+/** Las claves de los ajustes que son un número (los controles deslizantes). */
+export type NumKey = Exclude<keyof Adjust, "curves" | "levels">;
 
 export const ADJUST_ZERO: Adjust = {
   hdr: 0,
@@ -80,7 +87,7 @@ export const ADJUST_ZERO: Adjust = {
 
 export function adjustIdle(a: Adjust) {
   // el matiz del virado y el tamaño del grano no cuentan: sin virado o sin grano no hacen nada
-  return (Object.keys(ADJUST_ZERO) as (keyof Adjust)[]).every((k) => k === "bwHue" || k === "grainSize" || k === "styleAmt" || !a[k]);
+  return (Object.keys(ADJUST_ZERO) as NumKey[]).every((k) => k === "bwHue" || k === "grainSize" || k === "styleAmt" || !a[k]) && !toneLuts(a.curves, a.levels);
 }
 
 function clamp(n: number, lo = 0, hi = 255) {
@@ -453,6 +460,7 @@ export function applyAdjust(data: Uint8ClampedArray, w: number, h: number, input
   // el tamaño se mide respecto al ancho: la vista previa y el archivo final tienen el mismo aspecto
   const grainPx = (0.8 + (a.grainSize / 100) * 2.4) * (w / 1200);
   const toneAmt = a.bwTone / 100;
+  const luts = toneLuts(a.curves, a.levels);
   let toneR = 0;
   let toneG = 0;
   let toneB = 0;
@@ -615,6 +623,12 @@ export function applyAdjust(data: Uint8ClampedArray, w: number, h: number, input
         g += toneG * k;
         b += toneB * k;
       }
+    }
+
+    if (luts) {
+      r = luts.r[(clamp(r) + 0.5) | 0];
+      g = luts.g[(clamp(g) + 0.5) | 0];
+      b = luts.b[(clamp(b) + 0.5) | 0];
     }
 
     if (grainAmt) {

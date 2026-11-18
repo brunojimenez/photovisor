@@ -1,4 +1,4 @@
-import { ADJUST_ZERO, type Adjust } from "./editorAdjust";
+import { ADJUST_ZERO, type Adjust, type NumKey } from "./editorAdjust";
 
 export type Preset = {
   id: string;
@@ -32,7 +32,7 @@ export const PRESETS: Preset[] = [
 export function presetAdjust(preset: Preset, amount: number): Adjust {
   const k = Math.max(0, Math.min(100, amount)) / 100;
   const out: Adjust = { ...ADJUST_ZERO };
-  for (const key of Object.keys(preset.values) as (keyof Adjust)[]) {
+  for (const key of Object.keys(preset.values) as NumKey[]) {
     const value = preset.values[key] ?? 0;
     out[key] = key === "bwHue" ? value : Math.round(value * k);
   }

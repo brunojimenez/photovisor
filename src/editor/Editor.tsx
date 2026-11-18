@@ -1,52 +1,25 @@
-import { useEffect, useId, useRef, useState } from "react";
-import {
-  ArrowLeft, Bandage, Focus, Brush, ClipboardCopy, Crop, Download, Eraser, Eye, FlipHorizontal2, FlipVertical2, Maximize, MoveHorizontal,
-  MoveVertical, Paintbrush, Palette, Pencil, Pipette, Replace, RotateCcw, RotateCcwSquare, RotateCwSquare, Save, SaveAll, Scaling,
-  SlidersHorizontal, Smile, Square, Stamp, Type, Aperture, Check, OctagonX, Redo2, Undo2, Rows3, UserRound, WandSparkles, Wrench, type LucideIcon,
-} from "lucide-react";
-import { ADJUST_ZERO, HSL_BANDS, STYLE_KINDS, applyAdjust, adjustIdle, type Adjust, type Band, type HslKey } from "./editorAdjust";
-import { PRESETS, presetAdjust } from "./editorPresets";
-import { LUCIDE_STICKERS, lucideNode } from "./lucideStickers";
-import { FLUENT_CATS } from "./fluentList";
-
-/** Emoji del pack -> el carácter Unicode que se escribe en una frase. */
-const FLUENT_CHR = new Map(FLUENT_CATS.flatMap((c) => c.items.map((i) => [i.id, i.chr] as const)));
-import { WM_DEFAULT, drawPieces, drawWatermark, fluentSvgUrl, installedFonts, onFluentReady, PALETTES, paletteStops, watermarkIdle, wmFont, type Piece, type Watermark } from "./editorMark";
+import { useEffect, useRef, useState } from "react";
+import { Aperture, Check, Eraser, Focus, OctagonX, Redo2, Rows3, Undo2, UserRound } from "lucide-react";
+import { type Adjust, ADJUST_ZERO, adjustIdle, applyAdjust, type Band, HSL_BANDS, type HslKey, type NumKey, STYLE_KINDS } from "./editorAdjust";
+import { presetAdjust, PRESETS } from "./editorPresets";
+import { lucideNode } from "./lucideStickers";
+import { drawPieces, drawWatermark, installedFonts, onFluentReady, type Piece, type Watermark, watermarkIdle } from "./editorMark";
 import { applyPaint, cloneCanvas, eraseOverlay, type PaintFx } from "./editorPaint";
+import { createAdjustRunner, type AdjustRunner } from "./adjustClient";
+import { CurveEditor } from "./CurveEditor";
+import { autoLevels, histogramOf, LEVELS_ZERO, levelsIdle, type Curves, type Histogram, type Levels } from "./editorCurves";
+import { ASYNC_MIN_PIXELS, clampCrop, clampZoom, drawMarco, type CropBox, fitRatio, type Handle, raster, workingSize } from "./editorGeometry";
+import { loadWm } from "./editorWm";
+import { drawFocusMask, focusEditApply, focusFinishShape, focusHitTest, focusPresetShape, focusScale as focusScaleFor, invertAlpha, type FocusShape } from "./editorFocus";
+import { StyleTiles } from "./StyleTiles";
+import { FLUENT_CHR } from "./StickerUi";
+import { GlyphIcon } from "./EditorGlyphs";
+import { IconBrowser, LookPicker } from "./StickerUi";
+import { WatermarkDesigner } from "./WatermarkDesigner";
+import { AdjRow, Card, OptRow, SliderRow } from "./EditorUi";
 
-type Crop = { x: number; y: number; w: number; h: number };
-type Handle = "body" | "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 type Mark = "pencil" | "brush" | "eraser";
 type Tool = "adjust" | "crop" | "paint" | "stick" | "text" | "fill" | "wm";
-/** Fichas de estilo: con miniatura si hay (las pasa la app), si no, un botón de texto. */
-function StyleTiles(props: {
-  items: { id: string | number; label: string }[];
-  value: string | number;
-  thumbs?: Record<string, string>;
-  onPick: (id: any) => void;
-}) {
-  return (
-    <div className={props.thumbs ? "style-grid" : "editor-looks"}>
-      {props.items.map((s) => {
-        const src = props.thumbs?.[String(s.id)];
-        const on = props.value === s.id;
-        if (!props.thumbs) {
-          return (
-            <button key={s.id} type="button" className={`editor-look ${on ? "on" : ""}`} onClick={() => props.onPick(s.id)}>
-              {s.label}
-            </button>
-          );
-        }
-        return (
-          <button key={s.id} type="button" className={`style-tile ${on ? "on" : ""}`} onClick={() => props.onPick(s.id)} aria-pressed={on}>
-            <span className="style-thumb">{src ? <img src={src} alt="" draggable={false} /> : <b>✎</b>}</span>
-            <span className="style-name">{s.label}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 type AiMode = "blur" | "solid" | "replace" | "upscale" | "style";
 
@@ -72,7 +45,7 @@ export type BgFixOpts = {
   mask?: Blob;
 };
 
-const SLIDERS: { key: keyof Adjust; label: string; min?: number; def?: number }[] = [
+const SLIDERS: { key: NumKey; label: string; min?: number; def?: number }[] = [
   { key: "brightness", label: "Brillo" },
   { key: "hdr", label: "Exposición" },
   { key: "contrast", label: "Contraste" },
@@ -95,14 +68,12 @@ const SLIDERS: { key: keyof Adjust; label: string; min?: number; def?: number }[
   { key: "grainSize", label: "Tamaño grano", min: 0, def: 40 },
 ];
 
-const GROUPS: { title: string; keys: (keyof Adjust)[] }[] = [
+const GROUPS: { title: string; keys: NumKey[] }[] = [
   { title: "Claro", keys: ["brightness", "hdr", "contrast", "highlights", "shadows", "white", "black", "vignette", "marco"] },
   { title: "Color", keys: ["saturate", "warmth", "tint", "skin", "blue"] },
   { title: "Detalle", keys: ["detail", "sharp", "denoise", "chroma", "grain", "grainSize"] },
 ];
 
-const ZOOM_MIN = 0.05;
-const ZOOM_MAX = 4;
 const SIDE_MIN = 280;
 const SIDE_MAX = 560;
 const SIDE_DEF = 380;
@@ -134,172 +105,7 @@ const BG_SWATCHES = [
   { hex: "#C9D2DC", tip: "Frío" },
 ];
 
-function workingSize(iw: number, ih: number, rot: number) {
-  return rot % 180 === 0 ? { w: iw, h: ih } : { w: ih, h: iw };
-}
 
-function drawOriented(
-  ctx: CanvasRenderingContext2D,
-  img: HTMLImageElement,
-  rot: number,
-  flipH: boolean,
-  flipV: boolean,
-  tilt = 0,
-) {
-  const iw = img.naturalWidth;
-  const ih = img.naturalHeight;
-  const { w: W, h: H } = workingSize(iw, ih, rot);
-  ctx.save();
-  ctx.filter = "none";
-  ctx.translate(W / 2, H / 2);
-  if (tilt) {
-    const rad = (tilt * Math.PI) / 180;
-    const sin = Math.abs(Math.sin(rad));
-    const cos = Math.abs(Math.cos(rad));
-    const cover = Math.max((W * cos + H * sin) / W, (W * sin + H * cos) / H);
-    ctx.rotate(rad);
-    ctx.scale(cover, cover);
-  }
-  ctx.rotate((rot * Math.PI) / 180);
-  ctx.scale(flipH ? -1 : 1, flipV ? -1 : 1);
-  ctx.drawImage(img, -iw / 2, -ih / 2);
-  ctx.restore();
-}
-
-function clampCrop(c: Crop, W: number, H: number): Crop {
-  const min = 32;
-  let { x, y, w, h } = c;
-  w = Math.max(min, Math.min(W, w));
-  h = Math.max(min, Math.min(H, h));
-  x = Math.max(0, Math.min(W - w, x));
-  y = Math.max(0, Math.min(H - h, y));
-  return { x, y, w, h };
-}
-
-function fitRatio(W: number, H: number, ratio: number): Crop {
-  let w = W;
-  let h = w / ratio;
-  if (h > H) {
-    h = H;
-    w = h * ratio;
-  }
-  return clampCrop({ x: (W - w) / 2, y: (H - h) / 2, w, h }, W, H);
-}
-
-function clampZoom(n: number) {
-  return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, n));
-}
-
-function drawMarco(ctx: CanvasRenderingContext2D, w: number, h: number, amt: number) {
-  if (!amt) return;
-  const t = Math.max(3, Math.round(Math.min(w, h) * (0.012 + (Math.abs(amt) / 100) * 0.1)));
-  const rgb = amt < 0 ? "255,255,255" : "0,0,0";
-  const a = Math.min(1, Math.abs(amt) / 70);
-  const band = t * 1.6;
-  ctx.save();
-  const sides: [CanvasGradient, number, number, number, number][] = [
-    [ctx.createLinearGradient(0, 0, 0, band), 0, 0, w, band],
-    [ctx.createLinearGradient(0, h, 0, h - band), 0, h - band, w, band],
-    [ctx.createLinearGradient(0, 0, band, 0), 0, 0, band, h],
-    [ctx.createLinearGradient(w, 0, w - band, 0), w - band, 0, band, h],
-  ];
-  for (const [g, x, y, bw, bh] of sides) {
-    g.addColorStop(0, `rgba(${rgb},${a})`);
-    g.addColorStop(1, `rgba(${rgb},0)`);
-    ctx.fillStyle = g;
-    ctx.fillRect(x, y, bw, bh);
-  }
-  ctx.restore();
-}
-
-function raster(
-  img: HTMLImageElement,
-  rot: number,
-  flipH: boolean,
-  flipV: boolean,
-  width: number,
-  height: number,
-  adj: Adjust | null,
-  tilt = 0,
-) {
-  const { w: W, h: H } = workingSize(img.naturalWidth, img.naturalHeight, rot);
-  const src = document.createElement("canvas");
-  src.width = W;
-  src.height = H;
-  const sctx = src.getContext("2d");
-  if (!sctx) return null;
-  drawOriented(sctx, img, rot, flipH, flipV, tilt);
-  const out = document.createElement("canvas");
-  out.width = width;
-  out.height = height;
-  const octx = out.getContext("2d");
-  if (!octx) return null;
-  octx.imageSmoothingEnabled = true;
-  octx.imageSmoothingQuality = "high";
-  octx.drawImage(src, 0, 0, width, height);
-  if (adj && !adjustIdle(adj)) {
-    const pix = octx.getImageData(0, 0, width, height);
-    applyAdjust(pix.data, width, height, adj);
-    octx.putImageData(pix, 0, 0);
-  }
-  if (adj?.marco) drawMarco(octx, width, height, adj.marco);
-  return out;
-}
-
-const WM_ICONS = [
-  "★", "☆", "♥", "♡", "◆", "◇", "●", "○", "■", "□", "▲", "✦", "✓", "©", "™", "∞", "♪", "•",
-  "△", "▼", "▽", "◀", "▶", "✧", "✔", "✗", "✘", "®", "♫", "♬", "◦", "✿", "❀", "❁",
-  "✱", "✲", "✺", "☀", "☾", "☁", "☂", "⚡", "☺", "♠", "♣", "♦", "♔", "♕", "☎", "✈",
-  "✂", "✉", "⚑", "➤", "➜", "→", "←", "↑", "↓", "↔", "⌂", "☮", "☯", "☠", "☘", "❖",
-  "✪", "✯", "§", "¶", "†", "№", "°", "±", "×", "÷", "≈", "€", "£", "¥",
-];
-const WM_TRACE = WM_ICONS.map((ch) => ({ ch, tip: ch }));
-const WM_PLACES = [
-  ["tile", "Repetir", "Repetir en diagonal"],
-  ["center", "Centro", "Un sello al centro"],
-  ["tl", "↖", "Arriba a la izquierda"],
-  ["tr", "↗", "Arriba a la derecha"],
-  ["bl", "↙", "Abajo a la izquierda"],
-  ["br", "↘", "Abajo a la derecha"],
-] as const;
-
-function wmNum(v: unknown, fallback: number, lo: number, hi: number) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.max(lo, Math.min(hi, n));
-}
-
-export function loadWm(): Watermark {
-  try {
-    const raw = localStorage.getItem("editor.wm");
-    if (!raw) return WM_DEFAULT;
-    const parsed = JSON.parse(raw) as Partial<Watermark>;
-    return {
-      on: false,
-      mode: parsed.mode === "image" ? "image" : parsed.mode === "icon" ? "icon" : "text",
-      icon: typeof parsed.icon === "string" ? parsed.icon.slice(0, 80) : undefined,
-      text: typeof parsed.text === "string" ? parsed.text.slice(0, 80) : "",
-      font: wmFont(typeof parsed.font === "string" ? parsed.font : ""),
-      color: typeof parsed.color === "string" && /^#[0-9a-fA-F]{6}$/.test(parsed.color) ? parsed.color : WM_DEFAULT.color,
-      look: parsed.look === "gradient" || parsed.look === "rainbow" ? parsed.look : "solid",
-      color2: typeof parsed.color2 === "string" && /^#[0-9a-fA-F]{6}$/.test(parsed.color2) ? parsed.color2 : "#ff4fa3",
-      palette: typeof parsed.palette === "string" ? parsed.palette : "rainbow",
-      opacity: wmNum(parsed.opacity, WM_DEFAULT.opacity, 8, 92),
-      angle: wmNum(parsed.angle, WM_DEFAULT.angle, -75, 75),
-      size: wmNum(parsed.size, WM_DEFAULT.size, 10, 80),
-      gap: wmNum(parsed.gap, WM_DEFAULT.gap, 0, 100),
-      shade: wmNum(parsed.shade, WM_DEFAULT.shade, 0, 100),
-      place: (() => {
-        const saved = String(parsed.place || "");
-        if (saved === "corner" || saved === "br") return "br" as const;
-        if (saved === "center" || saved === "tl" || saved === "tr" || saved === "bl" || saved === "tile") return saved;
-        return "tile" as const;
-      })(),
-    };
-  } catch {
-    return WM_DEFAULT;
-  }
-}
 
 const FILL_ENGINES: { id: string; label: string; note: string }[] = [
   { id: "local", label: "Clonar", note: "Sin IA: tapa el trazo con el color del telón." },
@@ -317,7 +123,6 @@ function upscaleMotor(tiled: boolean, faceFix: boolean) {
   return "UltraSharp";
 }
 
-type FocusShape = { x: number; y: number; rx: number; ry: number; el: boolean };
 
 export default function Editor({
   src,
@@ -385,7 +190,7 @@ export default function Editor({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const bakedRef = useRef<HTMLCanvasElement | null>(null);
-  const drag = useRef<{ handle: Handle; x0: number; y0: number; crop0: Crop } | null>(null);
+  const drag = useRef<{ handle: Handle; x0: number; y0: number; crop0: CropBox } | null>(null);
   const panDrag = useRef<{ x0: number; y0: number; left0: number; top0: number } | null>(null);
   const hold = useRef<number | null>(null);
   const moved = useRef(false);
@@ -407,6 +212,11 @@ export default function Editor({
   const redoRef = useRef<HTMLCanvasElement[]>([]);
   const beforeRef = useRef<HTMLCanvasElement | null>(null);
   const stroking = useRef(false);
+  const [histo, setHisto] = useState<Histogram | null>(null);
+  // Ajustes en un Worker (fotos grandes): último resultado visible y pedido en curso
+  const adjRunnerRef = useRef<AdjustRunner | null>(null);
+  const adjPendingKey = useRef("");
+  const lastBakedRef = useRef<HTMLCanvasElement | null>(null);
   // Foco: círculos que quedan nítidos; el efecto (difuminar, pixelar, color) va afuera (o adentro) con borde difuso
   const focusCircles = useRef<FocusShape[]>([]);
   const focusDrag = useRef<(FocusShape & { sx: number; sy: number }) | null>(null);
@@ -442,7 +252,7 @@ export default function Editor({
   const [rot, setRot] = useState(0);
   const [flipH, setFlipH] = useState(false);
   const [flipV, setFlipV] = useState(false);
-  const [crop, setCrop] = useState<Crop>({ x: 0, y: 0, w: 1, h: 1 });
+  const [crop, setCrop] = useState<CropBox>({ x: 0, y: 0, w: 1, h: 1 });
   const [view, setView] = useState<View>({ scale: 1, left: 0, top: 0 });
   const [pin, setPin] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -759,37 +569,20 @@ export default function Editor({
     if (!ctx) return;
     ctx.clearRect(0, 0, stroke.width, stroke.height);
     const list = focusDrag.current ? [...focusCircles.current, focusDrag.current] : focusCircles.current;
-    const soft = focusSoftRef.current / 100;
-    for (const c of list) {
-      const rx = Math.max(2, c.rx * focusKRef.current);
-      const ry = Math.max(2, c.ry * focusKRef.current);
-      const inner = Math.max(0, Math.min(0.98, 1 - soft));
-      ctx.save();
-      ctx.translate(c.x, c.y);
-      ctx.scale(rx, ry);
-      const g = ctx.createRadialGradient(0, 0, inner, 0, 0, 1);
-      g.addColorStop(0, "rgba(255,255,255,1)");
-      g.addColorStop(1, "rgba(255,255,255,0)");
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(0, 0, 1, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
+    drawFocusMask(ctx, list, focusKRef.current, focusSoftRef.current / 100);
     stroking.current = list.length > 0;
     setPaintTick((n) => n + 1);
   }
 
   /** El foco usa radios proporcionales al tamaño de la foto: un difuminado de 30 px no se nota en una foto de 4000 px. */
   function focusScale(w: number, h: number) {
-    return focusOnRef.current ? Math.min(8, Math.max(0.2, Math.max(w, h) / 1000)) : 1;
+    return focusOnRef.current ? focusScaleFor(w, h) : 1;
   }
 
   /** Con el foco, el efecto va fuera de los círculos (la máscara se invierte) salvo que se pida adentro. */
   function focusMask(mk: ImageData) {
     if (focusInsideRef.current) return;
-    const d = mk.data;
-    for (let i = 3; i < d.length; i += 4) d[i] = 255 - d[i];
+    invertAlpha(mk.data);
   }
 
   function clearFocus() {
@@ -812,16 +605,7 @@ export default function Editor({
     if (!d) return;
     focusDrag.current = null;
     const { w, h } = work();
-    const k = focusKRef.current;
-    const tiny = d.rx * k < 8 && d.ry * k < 8;
-    const base = (Math.min(w, h) * 0.25) / k;
-    focusCircles.current.push({
-      x: d.x,
-      y: d.y,
-      rx: tiny ? base : Math.max(d.rx, 4 / k),
-      ry: tiny ? (d.el ? base * 0.7 : base) : Math.max(d.ry, 4 / k),
-      el: d.el,
-    });
+    focusCircles.current.push(focusFinishShape(d, focusKRef.current, w, h));
     setFocusN(focusCircles.current.length);
     drawFocus();
   }
@@ -832,9 +616,10 @@ export default function Editor({
     focusDrag.current = null;
     focusKRef.current = 1;
     setFocusK(1);
-    focusCircles.current = [{ x: w / 2, y: h / 2, rx: w * 0.55, ry: h * 0.55, el: true }];
-    focusSoftRef.current = 70;
-    setFocusSoft(70);
+    const v = focusPresetShape("vignette", w, h);
+    focusCircles.current = [v.shape];
+    focusSoftRef.current = v.soft;
+    setFocusSoft(v.soft);
     setFocusN(1);
     drawFocus();
   }
@@ -845,13 +630,10 @@ export default function Editor({
     focusDrag.current = null;
     focusKRef.current = 1;
     setFocusK(1);
-    const soft = kind === "portrait" ? 55 : 70;
-    focusCircles.current =
-      kind === "portrait"
-        ? [{ x: w / 2, y: h * 0.45, rx: w * 0.3, ry: h * 0.42, el: true }]
-        : [{ x: w / 2, y: h / 2, rx: w * 0.75, ry: h * 0.17, el: true }];
-    focusSoftRef.current = soft;
-    setFocusSoft(soft);
+    const pr = focusPresetShape(kind, w, h);
+    focusCircles.current = [pr.shape];
+    focusSoftRef.current = pr.soft;
+    setFocusSoft(pr.soft);
     setFocusN(1);
     drawFocus();
   }
@@ -869,20 +651,7 @@ export default function Editor({
 
   /** Busca la forma bajo el puntero: el borde (redimensionar) o el interior (mover). Lo último dibujado gana. */
   function focusHit(p: { x: number; y: number }) {
-    const kd = Math.max(0.05, viewRef.current.scale);
-    const K = focusKRef.current;
-    for (let i = focusCircles.current.length - 1; i >= 0; i--) {
-      const c = focusCircles.current[i];
-      const rx = Math.max(2, c.rx * K);
-      const ry = Math.max(2, c.ry * K);
-      const nx = (p.x - c.x) / rx;
-      const ny = (p.y - c.y) / ry;
-      const d = Math.hypot(nx, ny);
-      const edgePx = Math.abs(d - 1) * Math.min(rx, ry);
-      if (edgePx < 10 / kd) return { idx: i, mode: "resize" as const, axis: c.el ? (Math.abs(nx) > Math.abs(ny) ? ("x" as const) : ("y" as const)) : ("both" as const) };
-      if (d < 1) return { idx: i, mode: "move" as const, axis: "both" as const };
-    }
-    return null;
+    return focusHitTest(focusCircles.current, p, focusKRef.current, viewRef.current.scale);
   }
 
   function focusEditMove(p: { x: number; y: number }) {
@@ -890,21 +659,7 @@ export default function Editor({
     if (!ed) return;
     const c = focusCircles.current[ed.idx];
     if (!c) return;
-    const K = focusKRef.current;
-    if (ed.mode === "move") {
-      c.x = p.x - ed.dx;
-      c.y = p.y - ed.dy;
-    } else if (ed.axis === "x") {
-      c.rx = Math.max(4, Math.abs(p.x - c.x)) / K;
-    } else if (ed.axis === "y") {
-      c.ry = Math.max(4, Math.abs(p.y - c.y)) / K;
-    } else {
-      const nx = (p.x - c.x) / (c.rx * K);
-      const ny = (p.y - c.y) / (c.ry * K);
-      const f = Math.max(0.05, Math.hypot(nx, ny));
-      c.rx = Math.max(4 / K, c.rx * f);
-      c.ry = Math.max(4 / K, c.ry * f);
-    }
+    focusEditApply(c, ed.mode, ed.axis, p, focusKRef.current, { x: ed.dx, y: ed.dy });
     drawFocus();
   }
 
@@ -1204,9 +959,26 @@ export default function Editor({
     }
   }
 
-  function setAdjKey(key: keyof Adjust, n: number) {
+  function setAdjKey(key: NumKey, n: number) {
     setPresetId("");
     setAdj((a) => ({ ...a, [key]: n }));
+  }
+
+  /** Las curvas se guardan tal cual (también la diagonal) para no perder el punto que se está arrastrando. */
+  function setCurves(next: Curves) {
+    setPresetId("");
+    setAdj((a) => ({ ...a, curves: next }));
+  }
+
+  function setLevels(patch: Partial<Levels>) {
+    setPresetId("");
+    setAdj((a) => ({ ...a, levels: { ...LEVELS_ZERO, ...a.levels, ...patch } }));
+  }
+
+  function autoLevelsNow() {
+    if (!histo) return;
+    setPresetId("");
+    setAdj((a) => ({ ...a, levels: autoLevels(histo.l) }));
   }
 
   function chooseLook(id: string) {
@@ -1460,12 +1232,47 @@ export default function Editor({
     const { w: W, h: H } = workingSize(img.naturalWidth, img.naturalHeight, rot);
     const { dw, dh } = displaySize(W, H);
     const key = `${dw}x${dh}:${rot}:${tilt}:${flipH}:${flipV}:${compareRef.current}:${JSON.stringify(adjRef.current)}`;
+    const wantAdj = compareRef.current ? null : adjRef.current;
+    const heavy = !!wantAdj && !adjustIdle(wantAdj) && dw * dh >= ASYNC_MIN_PIXELS;
     if (!bakedRef.current || bakedRef.current.dataset.key !== key) {
-      const baked = raster(img, rot, flipH, flipV, dw, dh, compareRef.current ? null : adjRef.current, tilt);
-      if (!baked) return;
-      baked.dataset.key = key;
-      bakedRef.current = baked;
+      if (heavy && wantAdj) {
+        // Foto grande: el ajuste se calcula en un Worker. Mientras llega, se ve lo último calculado.
+        if (adjPendingKey.current !== key) {
+          adjPendingKey.current = key;
+          const base = raster(img, rot, flipH, flipV, dw, dh, null, tilt);
+          const bctx = base?.getContext("2d");
+          if (base && bctx) {
+            const pix = bctx.getImageData(0, 0, dw, dh);
+            if (!adjRunnerRef.current) adjRunnerRef.current = createAdjustRunner();
+            void adjRunnerRef.current.run(pix, wantAdj).then((out) => {
+              if (!out || adjPendingKey.current !== key) return;
+              bctx.putImageData(out, 0, 0);
+              if (wantAdj.marco) drawMarco(bctx, dw, dh, wantAdj.marco);
+              base.dataset.key = key;
+              base.dataset.src = src;
+              adjPendingKey.current = "";
+              bakedRef.current = base;
+              lastBakedRef.current = base;
+              setPaintTick((n) => n + 1);
+            });
+          }
+        }
+        if (!bakedRef.current) {
+          const last = lastBakedRef.current;
+          const usable = last && last.width === dw && last.height === dh && last.dataset.src === src;
+          bakedRef.current = usable ? last : raster(img, rot, flipH, flipV, dw, dh, null, tilt);
+        }
+      } else {
+        adjPendingKey.current = "";
+        const baked = raster(img, rot, flipH, flipV, dw, dh, wantAdj, tilt);
+        if (!baked) return;
+        baked.dataset.key = key;
+        baked.dataset.src = src;
+        bakedRef.current = baked;
+        lastBakedRef.current = baked;
+      }
     }
+    if (!bakedRef.current) return;
     canvas.width = dw;
     canvas.height = dh;
     const ctx = canvas.getContext("2d");
@@ -1633,6 +1440,20 @@ export default function Editor({
       if (localUrl) URL.revokeObjectURL(localUrl);
     };
   }, [src]);
+
+  useEffect(() => () => adjRunnerRef.current?.dispose(), []);
+
+  // Histograma de la foto sin ajustes (miniatura de 256 px): fondo de las curvas y base de los niveles automáticos
+  useEffect(() => {
+    if (!ready || tool !== "adjust") return;
+    const im = imgRef.current;
+    if (!im) return;
+    const { w: W, h: H } = workingSize(im.naturalWidth, im.naturalHeight, rot);
+    const k = 256 / Math.max(W, H, 1);
+    const c = raster(im, rot, flipH, flipV, Math.max(1, Math.round(W * k)), Math.max(1, Math.round(H * k)), null, tilt);
+    const d = c?.getContext("2d")?.getImageData(0, 0, c.width, c.height);
+    if (d) setHisto(histogramOf(d.data));
+  }, [ready, tool, rot, flipH, flipV, tilt]);
 
   useEffect(() => {
     if (!ready) return;
@@ -2242,7 +2063,7 @@ export default function Editor({
     }
   }
 
-  function blitPieces(ctx: CanvasRenderingContext2D, destW: number, destH: number, view: Crop, guide = false) {
+  function blitPieces(ctx: CanvasRenderingContext2D, destW: number, destH: number, view: CropBox, guide = false) {
     const list = piecesRef.current;
     if (!list.length || view.w < 1 || view.h < 1) return;
     const { w: W, h: H } = work();
@@ -2255,7 +2076,7 @@ export default function Editor({
     ctx.restore();
   }
 
-  function blitMark(ctx: CanvasRenderingContext2D, destW: number, destH: number, view: Crop) {
+  function blitMark(ctx: CanvasRenderingContext2D, destW: number, destH: number, view: CropBox) {
     const mark = wmRef.current;
     const image = wmImageRef.current;
     if (watermarkIdle(mark, image)) return;
@@ -2804,6 +2625,39 @@ export default function Editor({
                     })}
                   </Card>
                 ))}
+                <Card
+                  title="Curvas"
+                  action={
+                    adj.curves ? (
+                      <button type="button" className="editor-eyedrop" title="Volver las curvas a la diagonal" onClick={() => setCurves({})}>
+                        Restablecer
+                      </button>
+                    ) : undefined
+                  }
+                >
+                  <CurveEditor curves={adj.curves} histogram={histo} onChange={setCurves} />
+                </Card>
+                <Card
+                  title="Niveles"
+                  action={
+                    <>
+                      <button type="button" className="editor-eyedrop" disabled={!histo} title="Ajusta negro y blanco a los extremos reales de la foto" onClick={autoLevelsNow}>
+                        Auto
+                      </button>
+                      {!levelsIdle(adj.levels) && (
+                        <button type="button" className="editor-eyedrop" title="Volver los niveles a su valor original" onClick={() => setLevels({ ...LEVELS_ZERO })}>
+                          Restablecer
+                        </button>
+                      )}
+                    </>
+                  }
+                >
+                  <SliderRow icon="black" label="Negro" value={adj.levels?.inBlack ?? 0} min={0} max={254} def={0} hint="Todo lo que esté bajo este valor queda negro puro" onChange={(n) => setLevels({ inBlack: n, inWhite: Math.max(n + 1, adj.levels?.inWhite ?? 255) })} />
+                  <SliderRow icon="brightness" label="Medios" value={Math.round((adj.levels?.gamma ?? 1) * 100)} min={10} max={300} def={100} fmt={(n) => (n / 100).toFixed(2)} hint="Más de 1 aclara los medios tonos; menos de 1 los oscurece" onChange={(n) => setLevels({ gamma: n / 100 })} />
+                  <SliderRow icon="white" label="Blanco" value={adj.levels?.inWhite ?? 255} min={1} max={255} def={255} hint="Todo lo que esté sobre este valor queda blanco puro" onChange={(n) => setLevels({ inWhite: n, inBlack: Math.min(n - 1, adj.levels?.inBlack ?? 0) })} />
+                  <SliderRow icon="black" label="Salida negro" value={adj.levels?.outBlack ?? 0} min={0} max={255} def={0} hint="Sube el negro: da un look lavado, tipo película" onChange={(n) => setLevels({ outBlack: n })} />
+                  <SliderRow icon="white" label="Salida blanco" value={adj.levels?.outWhite ?? 255} min={0} max={255} def={255} hint="Baja el blanco: evita blancos quemados" onChange={(n) => setLevels({ outWhite: n })} />
+                </Card>
                 <Card title="Color por tono">
                     <div className="editor-hsl-dots" role="group" aria-label="Tono a ajustar">
                       {HSL_BANDS.map((band) => {
@@ -3618,807 +3472,6 @@ export default function Editor({
   );
 }
 
-type Glyph =
-  | "tools"
-  | "reset"
-  | "adjust"
-  | "crop"
-  | "style"
-  | "eyedrop"
-  | "heal"
-  | "back"
-  | "angle"
-  | "thick"
-  | "hard"
-  | "power"
-  | "size"
-  | "opacity"
-  | "spacing"
-  | "shadow"
-  | "margin"
-  | "feather"
-  | "detect"
-  | "eye"
-  | "save"
-  | "savecopy"
-  | "clipboard"
-  | "download"
-  | "paint"
-  | "stick"
-  | "text"
-  | "wm"
-  | "ai"
-  | "blur"
-  | "solid"
-  | "replace"
-  | "upscale"
-  | "pixel"
-  | "color"
-  | "clone"
-  | "pencil"
-  | "brush"
-  | "eraser"
-  | "rotl"
-  | "rotr"
-  | "fliph"
-  | "flipv"
-  | "fith"
-  | "fitv"
-  | "fitbox"
-  | keyof Adjust;
 
-/** Íconos del pack Lucide; los que no están aquí siguen con el dibujo propio de abajo. */
-const LUCIDE: Partial<Record<Glyph, LucideIcon>> = {
-  tools: Wrench, reset: RotateCcw, adjust: SlidersHorizontal, crop: Crop, style: Palette, eyedrop: Pipette, heal: Bandage, back: ArrowLeft,
-  save: Save, savecopy: SaveAll, clipboard: ClipboardCopy, download: Download, paint: Paintbrush, stick: Smile, text: Type, wm: Stamp,
-  ai: WandSparkles, replace: Replace, upscale: Scaling, eraser: Eraser, brush: Brush, pencil: Pencil, rotl: RotateCcwSquare,
-  rotr: RotateCwSquare, fliph: FlipHorizontal2, flipv: FlipVertical2, fith: MoveHorizontal, fitv: MoveVertical, fitbox: Maximize,
-  eye: Eye, solid: Square,
-};
 
-function GlyphIcon({ name, size = 16 }: { name: Glyph; size?: number }) {
-  const Lucide = LUCIDE[name];
-  if (Lucide) return <Lucide size={size} strokeWidth={1.75} aria-hidden />;
-  const s = {
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: 1.35,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-  };
-  return (
-    <svg viewBox="0 0 16 16" width={size} height={size} aria-hidden>
-      {name === "adjust" && (
-        <>
-          <path {...s} d="M2 4h12M2 8h12M2 12h12" />
-          <circle cx="5" cy="4" r="1.3" fill="currentColor" />
-          <circle cx="11" cy="8" r="1.3" fill="currentColor" />
-          <circle cx="7" cy="12" r="1.3" fill="currentColor" />
-        </>
-      )}
-      {name === "tools" && (
-        <>
-          <path
-            {...s}
-            transform="scale(.6667)"
-            strokeWidth={2}
-            d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"
-          />
-        </>
-      )}
-      {name === "save" && (
-        <>
-          <path {...s} d="M3 2.5h8.2l2.3 2.3V13a.5.5 0 0 1-.5.5H3a.5.5 0 0 1-.5-.5V3a.5.5 0 0 1 .5-.5Z" />
-          <path {...s} d="M5 2.5v3.2h5V2.5M5 13.5V9h6v4.5" />
-        </>
-      )}
-      {name === "savecopy" && (
-        <>
-          <rect {...s} x="5.6" y="5.6" width="8" height="8" rx="1.3" />
-          <path {...s} d="M10.4 5.6V3.9a1.3 1.3 0 0 0-1.3-1.3H3.9a1.3 1.3 0 0 0-1.3 1.3v5.2a1.3 1.3 0 0 0 1.3 1.3h1.7" />
-        </>
-      )}
-      {name === "reset" && (
-        <>
-          <path {...s} d="M2.4 8a5.6 5.6 0 1 0 1.7-4L2.4 5.6" />
-          <path {...s} d="M2.4 2.6v3h3" />
-        </>
-      )}
-      {name === "clipboard" && (
-        <>
-          <path {...s} d="M5.4 3.2H4.2a.9.9 0 0 0-.9.9v8.8a.9.9 0 0 0 .9.9h7.6a.9.9 0 0 0 .9-.9V4.1a.9.9 0 0 0-.9-.9h-1.2" />
-          <path {...s} d="M6 2.2h4v2H6z" />
-        </>
-      )}
-      {name === "download" && <path {...s} d="M8 2.5v7M5 6.8 8 9.8l3-3M3 13h10" />}
-      {name === "eye" && (
-        <>
-          <path {...s} d="M1.8 8S4 3.8 8 3.8 14.2 8 14.2 8 12 12.2 8 12.2 1.8 8 1.8 8Z" />
-          <circle {...s} cx="8" cy="8" r="1.9" />
-        </>
-      )}
-      {name === "angle" && <path {...s} d="M2.8 12.8h10.4M2.8 12.8 10.2 4.6M6.4 12.8a3.6 3.6 0 0 0-1-2.5" />}
-      {name === "thick" && (
-        <>
-          <path {...s} strokeWidth={1} d="M2.5 4h11" />
-          <path {...s} strokeWidth={2} d="M2.5 8h11" />
-          <path {...s} strokeWidth={3.4} d="M2.5 12.4h11" />
-        </>
-      )}
-      {name === "hard" && (
-        <>
-          <circle {...s} cx="8" cy="8" r="5.2" strokeDasharray="1.6 1.9" />
-          <circle cx="8" cy="8" r="2.4" fill="currentColor" />
-        </>
-      )}
-      {name === "power" && <path {...s} d="M9.2 1.8 4.4 9h3.4l-1 5.2L11.6 7H8.2z" />}
-      {name === "size" && <path {...s} d="M3 13 13 3M9 3h4v4M7 13H3V9" />}
-      {name === "opacity" && (
-        <>
-          <circle {...s} cx="8" cy="8" r="5.2" />
-          <path d="M8 2.8a5.2 5.2 0 0 0 0 10.4Z" fill="currentColor" />
-        </>
-      )}
-      {name === "spacing" && <path {...s} d="M3 3v10M13 3v10M5.6 8h4.8M7 6.6 5.6 8 7 9.4M9 6.6 10.4 8 9 9.4" />}
-      {name === "shadow" && (
-        <>
-          <path {...s} d="M3 3h7v7H3z" />
-          <path {...s} d="M6 12.6h6.6V6" />
-        </>
-      )}
-      {name === "margin" && (
-        <>
-          <path {...s} d="M2.6 2.6h10.8v10.8H2.6z" strokeDasharray="2 1.8" />
-          <path {...s} d="M6 6h4v4H6z" />
-        </>
-      )}
-      {name === "feather" && <path {...s} d="M13 3C7 3 3.6 6.4 3 13c6.6-.6 10-4 10-10ZM3 13l6-6" />}
-      {name === "detect" && (
-        <>
-          <circle {...s} cx="8" cy="8" r="3" />
-          <path {...s} d="M8 2v2.4M8 11.6V14M2 8h2.4M11.6 8H14" />
-        </>
-      )}
-      {name === "back" && <path {...s} d="M7 3.2 2.4 8 7 12.8M3 8h10.5" />}
-      {name === "eyedrop" && <path {...s} d="M12.4 3.6l-1.9 1.9M9.5 4.5l2.2 2.2M3 13l.6-2.6 5.7-5.7 2 2-5.7 5.7z" />}
-      {name === "heal" && (
-        <>
-          <path {...s} d="M5.2 11.8 11.8 5.2a2.1 2.1 0 0 0-3-3L2.2 8.8a2.1 2.1 0 0 0 3 3Z" />
-          <path {...s} strokeWidth={1.8} d="M7.1 7.1h.01M8.9 5.3h.01M5.3 8.9h.01" />
-        </>
-      )}
-      {name === "grain" && (
-        <>
-          <circle cx="3.6" cy="4.2" r="0.8" fill="currentColor" />
-          <circle cx="7" cy="3" r="0.6" fill="currentColor" />
-          <circle cx="11.2" cy="4.6" r="0.8" fill="currentColor" />
-          <circle cx="13" cy="8.2" r="0.6" fill="currentColor" />
-          <circle cx="9" cy="7.2" r="0.9" fill="currentColor" />
-          <circle cx="4.8" cy="8.6" r="0.7" fill="currentColor" />
-          <circle cx="7.6" cy="11.6" r="0.8" fill="currentColor" />
-          <circle cx="11.6" cy="12.2" r="0.6" fill="currentColor" />
-          <circle cx="3.4" cy="12.6" r="0.6" fill="currentColor" />
-        </>
-      )}
-      {name === "grainSize" && (
-        <>
-          <circle cx="4.6" cy="5" r="1.7" fill="currentColor" />
-          <circle cx="11" cy="4.2" r="1.3" fill="currentColor" />
-          <circle cx="8" cy="9.4" r="1.9" fill="currentColor" />
-          <circle cx="12.6" cy="11.6" r="1.2" fill="currentColor" />
-          <circle cx="3.8" cy="12" r="1.2" fill="currentColor" />
-        </>
-      )}
-      {name === "denoise" && (
-        <>
-          <circle cx="4" cy="5" r="1" fill="currentColor" />
-          <circle cx="8.5" cy="3.8" r="1" fill="currentColor" />
-          <circle cx="12" cy="6.5" r="1" fill="currentColor" />
-          <circle cx="5.5" cy="9.5" r="1" fill="currentColor" />
-          <circle cx="10" cy="10.5" r="1" fill="currentColor" />
-          <circle cx="7" cy="13" r="1" fill="currentColor" />
-          <circle cx="12.5" cy="12.5" r="1" fill="currentColor" />
-        </>
-      )}
-      {name === "chroma" && (
-        <>
-          <circle {...s} cx="8" cy="8" r="5.5" />
-          <path {...s} d="M8 2.5v11M8 8h5.2M8 5.2h3.6" />
-        </>
-      )}
-      {name === "style" && (
-        <>
-          <path {...s} d="M7.4 12.4c0 1.4-1.2 2-3.2 1.6.8-.9.6-1.7.8-2.6.3-1 1.3-1.5 2.3-1 .7.4.1 1.2.1 2z" />
-          <path {...s} d="M7.4 9.8 13 4.2a1.3 1.3 0 0 0-1.8-1.8L5.6 8" />
-        </>
-      )}
-      {name === "crop" && <path {...s} d="M5 2.4v8.2H13.2M2.4 5H11v8.6" />}
-      {name === "stick" && (
-        <>
-          <circle {...s} cx="8" cy="8" r="5.8" />
-          <circle cx="5.9" cy="6.6" r=".6" fill="currentColor" />
-          <circle cx="10.1" cy="6.6" r=".6" fill="currentColor" />
-          <path {...s} d="M5.2 9.4c.7 1.4 1.7 2 2.8 2s2.1-.6 2.8-2" />
-        </>
-      )}
-      {name === "text" && <path {...s} d="M3.2 3.2h9.6M8 3.2v9.6M5.6 12.8h4.8" />}
-      {name === "clone" && (
-        <>
-          <circle {...s} cx="6.2" cy="6.2" r="3.2" />
-          <circle {...s} cx="10.2" cy="10.2" r="3.2" />
-        </>
-      )}
-      {name === "paint" && <path {...s} d="M10.6 2.6 13.4 5.4M9.8 3.4 3.4 10.2c-.7.8-.2 1.8.7 2.1 1 .4 2-.2 2.4-1.2l6.2-6.6" />}
-      {name === "brush" && <path {...s} d="M11 2.4c1.4 1.2 2.2 2 2.6 2.6-2.2 2.4-4.6 4.6-7.2 6.2-1 .6-2.2.2-2.6-.6-.4-.8 0-1.8.8-2.4C7.2 6.2 9.4 4 11 2.4z" />}
-      {name === "wm" && (
-        <>
-          <path {...s} d="M2.6 2.6h10.8v10.8H2.6z" />
-          <path {...s} d="M5.2 10.4 8 5.2l2.8 5.2M6.2 8.5h3.6" />
-        </>
-      )}
-      {name === "ai" && <path {...s} d="M8 1.5v2.4M8 12.1v2.4M1.5 8h2.4M12.1 8h2.4M3.5 3.5l1.7 1.7M10.8 10.8l1.7 1.7M12.5 3.5l-1.7 1.7M5.2 10.8 3.5 12.5M8 6.2v3.6M6.2 8h3.6" />}
-      {name === "blur" && (
-        <>
-          <circle {...s} cx="8" cy="8" r="1.5" />
-          <circle {...s} cx="8" cy="8" r="3.3" />
-          <circle {...s} cx="8" cy="8" r="5.2" />
-        </>
-      )}
-      {name === "solid" && (
-        <>
-          <path {...s} d="M2.4 2.4h11.2v11.2H2.4z" />
-          <circle {...s} cx="8" cy="6.2" r="1.15" />
-          <path {...s} d="M5.6 11.4c.2-1.6 1-2.4 2.4-2.4s2.2.8 2.4 2.4" />
-        </>
-      )}
-      {name === "replace" && (
-        <>
-          <path {...s} d="M2.4 3.4h7.2v9.2H2.4z" />
-          <path {...s} d="M9.4 8h4M11.4 6.1 13.6 8 11.4 9.9" />
-        </>
-      )}
-      {name === "upscale" && <path {...s} d="M8 5V2.4M6.4 3.8 8 2.4 9.6 3.8M8 11v2.6M6.4 12.2 8 13.6 9.6 12.2M5 8H2.4M3.8 6.4 2.4 8 3.8 9.6M11 8h2.6M12.2 6.4 13.6 8 12.2 9.6" />}
-      {name === "pixel" && <path {...s} d="M2.6 2.6h4.2v4.2H2.6zM9.2 2.6h4.2v4.2H9.2zM2.6 9.2h4.2v4.2H2.6zM9.2 9.2h4.2v4.2H9.2z" />}
-      {name === "color" && (
-        <>
-          <circle {...s} cx="8" cy="8" r="4.4" />
-          <circle cx="8" cy="8" r="1.5" fill="currentColor" />
-        </>
-      )}
-      {name === "pencil" && <path {...s} d="M10.2 2.6 13.4 5.8M9.6 3.2 3.2 11.8 2.6 13.4 4.2 12.8 12.8 3.8" />}
-      {name === "eraser" && <path {...s} d="M2.8 13.2h7.2M6.2 11.4 9.6 6.2 12.8 9.2 9.2 13.2H6.4z" />}
-      {name === "rotl" && <path {...s} strokeWidth={1.7} d="M12.5 8A4.5 4.5 0 1 0 8 12.5M6 10.5 8 12.5 6 14.5" />}
-      {name === "rotr" && <path {...s} strokeWidth={1.7} d="M3.5 8A4.5 4.5 0 1 1 8 12.5M10 10.5 8 12.5 10 14.5" />}
-      {name === "fliph" && <path {...s} strokeWidth={1.7} d="M8 2.6v10.8M6.2 5.2 2.6 8l3.6 2.8M9.8 5.2 13.4 8 9.8 10.8" />}
-      {name === "flipv" && <path {...s} strokeWidth={1.7} d="M2.6 8h10.8M5.2 6.2 8 2.6l2.8 3.6M5.2 9.8 8 13.4l2.8-3.6" />}
-      {name === "fith" && <path {...s} d="M2.2 8h11.6M4.4 5.6 1.8 8l2.6 2.4M11.6 5.6 14.2 8l-2.6 2.4" />}
-      {name === "fitv" && <path {...s} d="M8 2.2v11.6M5.6 4.4 8 1.8l2.4 2.6M5.6 11.6 8 14.2l2.4-2.6" />}
-      {name === "fitbox" && <path {...s} d="M2.4 6V2.4H6M10 2.4h3.6V6M13.6 10v3.6H10M6 13.6H2.4V10" />}
-      {name === "brightness" && (
-        <>
-          <circle {...s} cx="8" cy="8" r="2.1" />
-          <path {...s} d="M8 1.6v1.7M8 12.7v1.7M1.6 8h1.7M12.7 8h1.7M3.4 3.4l1.2 1.2M11.4 11.4l1.2 1.2M12.6 3.4 11.4 4.6M4.6 11.4 3.4 12.6" />
-        </>
-      )}
-      {name === "hdr" && (
-        <>
-          <circle {...s} cx="8" cy="8" r="4.6" />
-          <path {...s} d="M8 5.4v5.2M5.4 8h5.2" />
-        </>
-      )}
-      {name === "contrast" && (
-        <>
-          <circle {...s} cx="8" cy="8" r="4.6" />
-          <path {...s} d="M8 3.4v9.2" />
-        </>
-      )}
-      {name === "highlights" && <path {...s} d="M3 12.4h10M4.2 12.4 8 4.2l3.8 8.2M8 1.8v1.4" />}
-      {name === "shadows" && (
-        <>
-          <circle {...s} cx="8" cy="8" r="4.4" />
-          <path {...s} d="M3.8 9.4c1 2 2.4 3.1 4.2 3.1s3.2-1.1 4.2-3.1" />
-        </>
-      )}
-      {name === "white" && <circle {...s} cx="8" cy="8" r="4.2" />}
-      {name === "black" && <circle cx="8" cy="8" r="3.4" fill="currentColor" />}
-      {name === "vignette" && (
-        <>
-          <rect {...s} x="2.4" y="3.2" width="11.2" height="9.6" rx="1.4" />
-          <circle {...s} cx="8" cy="8" r="2.1" />
-        </>
-      )}
-      {name === "marco" && (
-        <>
-          <rect {...s} x="2.3" y="2.3" width="11.4" height="11.4" rx="1" />
-          <rect {...s} x="5" y="5" width="6" height="6" />
-        </>
-      )}
-      {name === "saturate" && (
-        <>
-          <circle {...s} cx="8" cy="8" r="4.5" />
-          <path {...s} d="M8 5.2v5.6" />
-        </>
-      )}
-      {name === "warmth" && (
-        <>
-          <path {...s} d="M8 2.2v6.4" />
-          <circle {...s} cx="8" cy="11.2" r="2.15" />
-        </>
-      )}
-      {name === "tint" && <path {...s} d="M8 2.4c2.2 2.6 3.5 4.2 3.5 6.1a3.5 3.5 0 0 1-7 0c0-1.9 1.3-3.5 3.5-6.1z" />}
-      {name === "skin" && (
-        <>
-          <circle {...s} cx="8" cy="8" r="5" />
-          <circle cx="6.2" cy="7.2" r="0.55" fill="currentColor" />
-          <circle cx="9.8" cy="7.2" r="0.55" fill="currentColor" />
-          <path {...s} d="M6.3 10c.6.8 1.2 1.1 1.7 1.1s1.1-.3 1.7-1.1" />
-        </>
-      )}
-      {name === "blue" && (
-        <>
-          <circle {...s} cx="8" cy="8" r="4.6" />
-          <path {...s} d="M4.2 8.8c.8-1.1 1.5-1.1 2.3 0s1.5 1.1 2.3 0 1.5-1.1 2.3 0" />
-        </>
-      )}
-      {name === "detail" && <path {...s} d="M3.2 12.2 8 3.6l4.8 8.6M5.8 9.2h4.4" />}
-      {name === "sharp" && (
-        <>
-          <circle {...s} cx="8" cy="8" r="2" />
-          <path {...s} d="M8 2.2v2.3M8 11.5v2.3M2.2 8h2.3M11.5 8h2.3" />
-        </>
-      )}
-    </svg>
-  );
-}
 
-type StickInk = { look: "solid" | "gradient" | "rainbow"; c1: string; c2: string; palette?: string };
-
-/** Paradas de color del estilo elegido (liso = una sola, degradado = dos, arcoíris = seis). */
-function inkStops(ink: StickInk): string[] {
-  if (ink.look === "rainbow") return [...paletteStops(ink.palette)];
-  if (ink.look === "gradient") return [ink.c1, ink.c2];
-  return [ink.c1];
-}
-
-/** Fondo CSS que representa el estilo (para puntos de muestra y para texto con degradado). */
-function inkCss(ink: StickInk): string {
-  const stops = inkStops(ink);
-  return stops.length === 1 ? stops[0] : `linear-gradient(135deg, ${stops.join(", ")})`;
-}
-
-/** Vista previa en la paleta de un ícono del pack (mismos trazos que se dibujan sobre la foto). */
-function LucideSticker({ icon, ink }: { icon: string; ink?: StickInk }) {
-  const node = lucideNode(icon);
-  const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
-  if (!node) return null;
-  const stops = ink ? inkStops(ink) : [];
-  const stroke = ink ? (stops.length === 1 ? stops[0] : `url(#lg${uid})`) : "currentColor";
-  return (
-    <svg viewBox="0 0 24 24" width={20} height={20} fill="none" stroke={stroke} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      {ink && stops.length > 1 && (
-        <defs>
-          <linearGradient id={`lg${uid}`} gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="24" y2="24">
-            {stops.map((c, i) => (
-              <stop key={i} offset={i / (stops.length - 1)} stopColor={c} />
-            ))}
-          </linearGradient>
-        </defs>
-      )}
-      {node.map(([tag, attrs], i) => {
-        const Tag = tag as "path";
-        return <Tag key={i} {...(attrs as object)} />;
-      })}
-    </svg>
-  );
-}
-
-const STICK_SWATCHES = ["#ffffff", "#111111", "#ff3b30", "#ff9500", "#ffd60a", "#34c759", "#3ec4e0", "#0a84ff", "#af52de", "#ff4fa3"];
-
-/** Fila de colores + selector libre. */
-function StickSwatches(props: { label: string; value: string; onPick: (hex: string) => void }) {
-  return (
-    <div className="editor-swatches stick-swatches" aria-label={props.label}>
-      <span className="stick-swatch-label">{props.label}</span>
-      {STICK_SWATCHES.map((hex) => (
-        <button
-          key={hex}
-          type="button"
-          className={`editor-swatch ${props.value.toLowerCase() === hex ? "on" : ""}`}
-          style={{ background: hex }}
-          title={hex}
-          aria-label={hex}
-          onClick={() => props.onPick(hex)}
-        />
-      ))}
-      <input type="color" className="stick-color-input" value={props.value} title="Otro color" aria-label="Otro color" onChange={(event) => props.onPick(event.target.value)} />
-    </div>
-  );
-}
-
-/** Diseñador de la marca de agua (texto, ícono o imagen, con su color, estilo y posición). Lo usan el editor y la marca en lote. */
-export function WatermarkDesigner(props: {
-  wm: Watermark;
-  setWm: (update: (w: Watermark) => Watermark) => void;
-  fileName: string;
-  onPickImage: (file: File) => void;
-}) {
-  const { wm, setWm } = props;
-  const wmFileRef = useRef<HTMLInputElement | null>(null);
-
-  /** Un ícono de líneas pasa a ser el sello; un emoji o un carácter de trazo se escribe en la frase. */
-  function pickWmIcon(ch: string) {
-    if (lucideNode(ch)) {
-      setWm((w) => ({ ...w, on: true, mode: "icon", icon: ch }));
-      return;
-    }
-    const add = ch.startsWith("fe:") ? (FLUENT_CHR.get(ch) ?? "") : ch;
-    setWm((w) => ({ ...w, on: true, mode: "text", text: (w.text + add).slice(0, 80) }));
-  }
-
-  return (
-    <>
-                <Card title="Marca de agua">
-<label className="editor-pin">
-                  <input
-                    type="checkbox"
-                    checked={wm.on}
-                    onChange={(e) => setWm((w) => ({ ...w, on: e.target.checked }))}
-                  />
-                  ver en la foto y al guardar
-                </label>
-                <div className="editor-seg">
-                  <button
-                    type="button"
-                    className={wm.mode === "text" ? "on" : ""}
-                    onClick={() => setWm((w) => ({ ...w, mode: "text", on: true }))}
-                  >
-                    Texto
-                  </button>
-                  <button
-                    type="button"
-                    className={wm.mode === "icon" ? "on" : ""}
-                    onClick={() => setWm((w) => ({ ...w, mode: "icon", on: true }))}
-                  >
-                    Ícono
-                  </button>
-                  <button
-                    type="button"
-                    className={wm.mode === "image" ? "on" : ""}
-                    onClick={() => setWm((w) => ({ ...w, mode: "image", on: true }))}
-                  >
-                    Imagen
-                  </button>
-                </div>
-                {wm.mode === "text" ? (
-                  <>
-                    <input
-                      className="editor-wm-text"
-                      value={wm.text}
-                      maxLength={80}
-                      placeholder="🔥TuMarca"
-                      onChange={(e) => setWm((w) => ({ ...w, on: true, text: e.target.value }))}
-                    />
-                <select
-                  className="editor-font" title="Fuente" aria-label="Fuente"
-                  value={wmFont(wm.font)}
-                  onChange={(e) => setWm((w) => ({ ...w, font: e.target.value }))}
-                >
-                  {installedFonts().map((font) => (
-                    <option key={font} value={font} style={{ fontFamily: `"${font}"` }}>{font}</option>
-                  ))}
-                </select>
-                                      </>
-                ) : wm.mode === "icon" ? (
-                  <p className="hint">Elige un emoji o un ícono de líneas abajo: se usa como sello, con el tamaño, giro, opacidad y mosaico de más abajo.</p>
-                ) : (
-                  <>
-                    <button type="button" className="btn-ghost editor-wm-file" onClick={() => wmFileRef.current?.click()}>
-                      {props.fileName || "Elegir PNG o imagen"}
-                    </button>
-                    <input
-                      ref={wmFileRef}
-                      type="file"
-                      accept="image/png,image/webp,image/jpeg,image/gif"
-                      hidden
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        e.target.value = "";
-                        if (file) props.onPickImage(file);
-                      }}
-                    />
-                    <p className="hint">PNG con transparencia. El lugar de abajo vale igual para la imagen.</p>
-                  </>
-                )}
-                </Card>
-                {(wm.mode === "text" || wm.mode === "icon") && (
-                  <>
-                    <IconBrowser
-                      isOn={(ch) => wm.mode === "icon" && wm.icon === ch}
-                      onPick={pickWmIcon}
-                      ink={{ look: wm.look ?? "solid", c1: wm.color, c2: wm.color2 ?? "#ff4fa3", palette: wm.palette ?? "rainbow" }}
-                    />
-                    <p className="hint">
-                      {wm.mode === "icon"
-                        ? "Los emojis conservan sus colores; el color y estilo de abajo vale para los íconos de líneas."
-                        : "Los emojis y los caracteres de Trazo se escriben en la frase. Un ícono de líneas pasa a modo Ícono y queda como sello."}
-                    </p>
-                    <Card title="Color y estilo">
-                      <LookPicker
-                        look={wm.look ?? "solid"}
-                        color={wm.color}
-                        color2={wm.color2 ?? "#ff4fa3"}
-                        palette={wm.palette ?? "rainbow"}
-                        onChange={(patch) => setWm((w) => ({ ...w, ...patch }))}
-                      />
-                    </Card>
-                  </>
-                )}
-                <Card title="Posición">
-                <div className="editor-seg">
-                  {WM_PLACES.map(([id, label, tip]) => (
-                    <button
-                      key={id}
-                      type="button"
-                      className={wm.place === id ? "on" : ""}
-                      title={tip}
-                      onClick={() => setWm((w) => ({ ...w, place: id, on: true }))}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <OptRow label="Opacidad" value={wm.opacity} min={8} max={92} def={WM_DEFAULT.opacity} onChange={(n) => setWm((w) => ({ ...w, opacity: n }))} />
-                <OptRow label="Ángulo" value={wm.angle} min={-75} max={75} def={WM_DEFAULT.angle} onChange={(n) => setWm((w) => ({ ...w, angle: n }))} />
-                <OptRow label="Tamaño" value={wm.size} min={10} max={80} def={WM_DEFAULT.size} onChange={(n) => setWm((w) => ({ ...w, size: n }))} />
-                {wm.place === "tile" && (
-                  <OptRow label="Separación" value={wm.gap} min={0} max={100} def={WM_DEFAULT.gap} onChange={(n) => setWm((w) => ({ ...w, gap: n }))} />
-                )}
-                {wm.mode === "text" && (
-                  <OptRow label="Sombra" value={wm.shade} min={0} max={100} def={WM_DEFAULT.shade} onChange={(n) => setWm((w) => ({ ...w, shade: n }))} />
-                )}
-                </Card>
-    </>
-  );
-}
-
-type LookId = "solid" | "gradient" | "rainbow";
-
-/** Selector de color y estilo: liso, degradado o multicolor (con sus paletas). Lo usan íconos, texto y marca de agua. */
-function LookPicker(props: {
-  look: LookId;
-  color: string;
-  color2: string;
-  palette: string;
-  onChange: (patch: { look?: LookId; color?: string; color2?: string; palette?: string }) => void;
-}) {
-  const { look, color, color2, palette, onChange } = props;
-  return (
-    <>
-      <div className="editor-seg" role="group" aria-label="Estilo del color">
-        {([["solid", "Liso"], ["gradient", "Degradado"], ["rainbow", "Arcoíris"]] as const).map(([id, name]) => (
-          <button key={id} type="button" className={look === id ? "on" : ""} title={name} onClick={() => onChange({ look: id })}>
-            <i className="look-dot" style={{ background: inkCss({ look: id, c1: color, c2: color2, palette }) }} />
-            {name}
-          </button>
-        ))}
-      </div>
-      {look === "rainbow" && (
-        <div className="palette-row" role="group" aria-label="Degradado multicolor">
-          {PALETTES.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className={`palette-chip ${palette === p.id ? "on" : ""}`}
-              style={{ background: `linear-gradient(90deg, ${p.stops.join(", ")})` }}
-              title={p.name}
-              aria-label={p.name}
-              onClick={() => onChange({ palette: p.id })}
-            />
-          ))}
-        </div>
-      )}
-      {look !== "rainbow" && <StickSwatches label={look === "gradient" ? "Desde" : "Color"} value={color} onPick={(hex) => onChange({ color: hex })} />}
-      {look === "gradient" && <StickSwatches label="Hasta" value={color2} onPick={(hex) => onChange({ color2: hex })} />}
-    </>
-  );
-}
-
-const plain = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-
-/** Emojis a color (Fluent Emoji Flat, Microsoft, MIT): por categoría o con buscador. Los SVG se cargan bajo demanda. */
-function FluentBody(props: { isOn: (id: string) => boolean; onPick: (id: string) => void }) {
-  const [bodies, setBodies] = useState<Record<string, string> | null>(null);
-  const [cat, setCat] = useState(0);
-  const [query, setQuery] = useState("");
-  useEffect(() => {
-    let live = true;
-    void import("./fluentSvgs").then((m) => live && setBodies(m.FLUENT_BODIES));
-    return () => {
-      live = false;
-    };
-  }, []);
-  const q = plain(query.trim());
-  const items = q ? FLUENT_CATS.flatMap((c) => c.items).filter((i) => plain(i.tip).includes(q)) : FLUENT_CATS[cat].items;
-  return (
-    <>
-      <input className="editor-wm-text" value={query} placeholder="Buscar: corazón, gato, fiesta…" onChange={(e) => setQuery(e.target.value)} />
-      {!q && (
-        <div className="fe-cats" role="group" aria-label="Categorías">
-          {FLUENT_CATS.map((c, i) => (
-            <button key={c.name} type="button" className={i === cat ? "on" : ""} onClick={() => setCat(i)}>
-              {c.name}
-            </button>
-          ))}
-        </div>
-      )}
-      <div className="editor-wm-icons more fe-grid">
-        {items.length === 0 && <p className="hint">Sin resultados.</p>}
-        {items.map((i) => (
-          <button key={i.id} type="button" className={props.isOn(i.id) ? "on" : ""} title={`Usar ${i.tip}`} onClick={() => props.onPick(i.id)}>
-            {bodies && bodies[i.id.slice(3)] ? <img src={fluentSvgUrl(bodies[i.id.slice(3)], 48)} width={24} height={24} alt={i.tip} draggable={false} /> : null}
-          </button>
-        ))}
-      </div>
-    </>
-  );
-}
-
-/** Una celda de las paletas de íconos: ícono del pack, texto de trazo o, con `ink`, la vista previa del color y estilo elegidos. */
-function IconCell(props: { icon: { ch: string; tip: string }; ink?: StickInk; on: boolean; prefix: string; onPick: (ch: string) => void }) {
-  const { icon, ink } = props;
-  return (
-    <button type="button" className={props.on ? "on" : ""} title={`${props.prefix} ${icon.tip}`} onClick={() => props.onPick(icon.ch)}>
-      {lucideNode(icon.ch) ? (
-        <LucideSticker icon={icon.ch} ink={ink} />
-      ) : ink ? (
-        <span
-          className="ink-glyph"
-          style={
-            inkStops(ink).length === 1
-              ? { color: ink.c1 }
-              : { backgroundImage: inkCss(ink), WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }
-          }
-        >
-          {icon.ch}
-        </span>
-      ) : (
-        icon.ch
-      )}
-    </button>
-  );
-}
-
-/** Una sola tarjeta de íconos con tres subconjuntos: emojis a color, íconos de trazo y el pack de líneas. */
-function IconBrowser(props: { isOn: (ch: string) => boolean; onPick: (ch: string) => void; ink: StickInk }) {
-  const [tab, setTab] = useState<"emoji" | "trazo" | "pack">("emoji");
-  return (
-    <Card title="Íconos">
-      <div className="editor-seg" role="group" aria-label="Tipo de ícono">
-        {([["emoji", "Emojis"], ["trazo", "Trazo"], ["pack", "Líneas"]] as const).map(([id, name]) => (
-          <button key={id} type="button" className={tab === id ? "on" : ""} onClick={() => setTab(id)}>
-            {name}
-          </button>
-        ))}
-      </div>
-      {tab === "emoji" ? (
-        <FluentBody isOn={props.isOn} onPick={props.onPick} />
-      ) : (
-        <div className="editor-wm-icons more fe-grid">
-          {(tab === "trazo" ? WM_TRACE : LUCIDE_STICKERS).map((icon) => (
-            <IconCell key={icon.ch} icon={icon} ink={props.ink} on={props.isOn(icon.ch)} prefix="Usar" onPick={props.onPick} />
-          ))}
-        </div>
-      )}
-    </Card>
-  );
-}
-
-const OPT_ICONS: Record<string, Glyph> = {
-  "Ángulo": "angle",
-  Grosor: "thick",
-  Dureza: "hard",
-  Intensidad: "power",
-  "Tamaño": "size",
-  Opacidad: "opacity",
-  "Separación": "spacing",
-  Sombra: "shadow",
-  Margen: "margin",
-  Pluma: "feather",
-  "Detección": "detect",
-};
-
-/** Todo grupo de controles va en una tarjeta con su título; es la única forma de agrupar en el panel. */
-function Card({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <section className="editor-card">
-      <div className="editor-card-head">
-        <p className="editor-card-title">{title}</p>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function SliderRow({
-  icon,
-  label,
-  value,
-  min,
-  max,
-  step = 1,
-  def,
-  fmt,
-  hint,
-  onChange,
-}: {
-  icon: Glyph;
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step?: number;
-  def?: number;
-  fmt?: (n: number) => string;
-  hint?: string;
-  onChange: (n: number) => void;
-}) {
-  const dirty = def !== undefined && value !== def;
-  const nudge = (d: number) => onChange(Math.max(min, Math.min(max, Math.round((value + d) * 1000) / 1000)));
-  return (
-    <div className="adj-row" title={hint}>
-      <span className="adj-ico" title={hint ?? label}>
-        <GlyphIcon name={icon} size={13} />
-      </span>
-      <span className="adj-lab" title={hint ?? label}>{label}</span>
-      <button type="button" className="adj-nudge" disabled={value <= min} title={`${label} −`} onClick={() => nudge(-step)}>
-        −
-      </button>
-      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(+e.target.value)} />
-      <button type="button" className="adj-nudge" disabled={value >= max} title={`${label} +`} onClick={() => nudge(step)}>
-        +
-      </button>
-      <button type="button" className="adj-val" disabled={!dirty} title={def !== undefined ? `${label}: volver a ${fmt ? fmt(def) : def}` : label} onClick={() => def !== undefined && onChange(def)}>
-        {fmt ? fmt(value) : value}
-      </button>
-    </div>
-  );
-}
-
-function OptRow({
-  label,
-  value,
-  min,
-  max,
-  def,
-  hint,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  def?: number;
-  hint?: string;
-  onChange: (n: number) => void;
-}) {
-  return <SliderRow icon={OPT_ICONS[label] ?? "size"} label={label} value={value} min={min} max={max} def={def} hint={hint} onChange={onChange} />;
-}
-
-function AdjRow({
-  icon,
-  label,
-  value,
-  min = -100,
-  def = 0,
-  onChange,
-}: {
-  icon: keyof Adjust;
-  label: string;
-  value: number;
-  min?: number;
-  def?: number;
-  onChange: (n: number) => void;
-}) {
-  return <SliderRow icon={icon} label={label} value={value} min={min} max={100} def={def} onChange={onChange} />;
-}

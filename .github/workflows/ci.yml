@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  interfaz:
+    name: Interfaz (tipos, pruebas y build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Tipos
+        run: npm run typecheck
+      - name: Pruebas
+        run: npm test
+      - name: Build de la interfaz
+        run: npx vite build
+
+  nucleo:
+    name: Núcleo Rust (pruebas)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - name: Interfaz compilada (Tauri la necesita para compilar)
+        run: npx vite build
+      - name: Pruebas de Rust
+        run: cargo test --manifest-path src-tauri/Cargo.toml
