@@ -1,7 +1,7 @@
 /** Marca de agua en canvas: texto con íconos, repetido en diagonal, o una imagen. */
 import { drawLucide, lucideNode } from "./lucideStickers";
 
-export type WmMode = "text" | "image";
+export type WmMode = "text" | "image" | "icon";
 export type WmPlace = "tile" | "center" | "tl" | "tr" | "bl" | "br";
 
 export type Watermark = {
@@ -20,6 +20,8 @@ export type Watermark = {
   look?: "solid" | "gradient" | "rainbow";
   color2?: string;
   palette?: string;
+  /** Con el modo «icon»: emoji ("fe:nombre") o ícono del pack de líneas que hace de sello. */
+  icon?: string;
 };
 
 export const WM_FONTS = [
@@ -489,6 +491,7 @@ function fillMark(ctx: CanvasRenderingContext2D, text: string, x: number, y: num
 export function watermarkIdle(wm: Watermark, image: HTMLImageElement | null) {
   if (!wm.on) return true;
   if (wm.mode === "image") return !image || !image.complete || image.naturalWidth < 1;
+  if (wm.mode === "icon") return !wm.icon;
   return !wm.text.trim();
 }
 
@@ -513,6 +516,25 @@ function placed(box: WmFrame, w: number, h: number, place: WmPlace) {
   if (place === "bl") return { x: box.x + margin, y: box.y + box.h - h - margin };
   if (place === "br") return { x: box.x + box.w - w - margin, y: box.y + box.h - h - margin };
   return { x: box.x + (box.w - w) / 2, y: box.y + (box.h - h) / 2 };
+}
+
+/** Lado del sello cuadrado de un ícono, según el tamaño elegido. */
+function iconSide(frame: WmFrame, size: number) {
+  const short = Math.max(1, Math.min(frame.w, frame.h));
+  return short * (0.1 + (Math.max(8, size) / 100) * 0.42);
+}
+
+/** Dibuja un emoji o un ícono de líneas como sello, con su esquina superior izquierda en (x, y). */
+function drawIconStamp(ctx: CanvasRenderingContext2D, wm: Watermark, baseColor: string, x: number, y: number, side: number) {
+  const icon = wm.icon ?? "";
+  if (icon.startsWith("fe:")) {
+    const im = fluentImage(icon.slice(3));
+    if (im) ctx.drawImage(im, x, y, side, side);
+  } else if (lucideNode(icon)) {
+    ctx.save();
+    drawLucide(ctx, icon, x + side / 2, y + side / 2, side, makeInk(ctx, wm, baseColor));
+    ctx.restore();
+  }
 }
 
 export function drawWatermark(
@@ -555,6 +577,12 @@ export function drawWatermark(
       ctx.rotate(angle);
       ctx.fillStyle = markInk(-tw / 2, -px / 2, tw / 2, px / 2);
       fillMark(ctx, text, -tw / 2, 0, px, wm.font);
+    } else if (wm.mode === "icon") {
+      const side = iconSide(box, wm.size);
+      const spot = placed(box, side, side, place);
+      ctx.translate(spot.x + side / 2, spot.y + side / 2);
+      ctx.rotate(angle);
+      drawIconStamp(ctx, wm, baseColor, -side / 2, -side / 2, side);
     } else if (image) {
       const { w, h } = stampSize(box, image, wm.size);
       const spot = placed(box, w, h, place);
@@ -596,6 +624,22 @@ export function drawWatermark(
       for (let x = -span / 2 + ox; x < span / 2 && drawn < 900; x += gapX) {
         ctx.fillStyle = markInk(x, y - px / 2, x + tw, y + px / 2);
         fillMark(ctx, text, x, y, px, wm.font);
+        drawn++;
+      }
+      row++;
+    }
+  } else if (wm.mode === "icon") {
+    const side = iconSide({ x: 0, y: 0, w: Math.min(imgW, imgH), h: Math.min(imgW, imgH) }, wm.size * 0.72);
+    const extra = side * (0.25 + (wm.gap / 100) * 2.4);
+    const gapX = side + extra;
+    const gapY = side + extra * 0.85;
+    const span = diag * 2;
+    let row = 0;
+    let drawn = 0;
+    for (let y = -span / 2; y < span / 2 && drawn < 900; y += gapY) {
+      const ox = (row % 2) * (gapX * 0.5);
+      for (let x = -span / 2 + ox; x < span / 2 && drawn < 900; x += gapX) {
+        drawIconStamp(ctx, wm, baseColor, x, y, side);
         drawn++;
       }
       row++;

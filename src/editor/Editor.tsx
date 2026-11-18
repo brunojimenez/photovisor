@@ -8,7 +8,7 @@ import { ADJUST_ZERO, HSL_BANDS, STYLE_KINDS, applyAdjust, adjustIdle, type Adju
 import { PRESETS, presetAdjust } from "./editorPresets";
 import { LUCIDE_STICKERS, lucideNode } from "./lucideStickers";
 import { FLUENT_CATS } from "./fluentList";
-import { WM_COLOR_ICONS, WM_DEFAULT, drawPieces, drawWatermark, fluentSvgUrl, installedFonts, onFluentReady, PALETTES, paletteStops, watermarkIdle, wmFont, type Piece, type Watermark } from "./editorMark";
+import { WM_DEFAULT, drawPieces, drawWatermark, fluentSvgUrl, installedFonts, onFluentReady, PALETTES, paletteStops, watermarkIdle, wmFont, type Piece, type Watermark } from "./editorMark";
 import { applyPaint, cloneCanvas, eraseOverlay, type PaintFx } from "./editorPaint";
 
 type Crop = { x: number; y: number; w: number; h: number };
@@ -273,7 +273,8 @@ function loadWm(): Watermark {
     const parsed = JSON.parse(raw) as Partial<Watermark>;
     return {
       on: false,
-      mode: parsed.mode === "image" ? "image" : "text",
+      mode: parsed.mode === "image" ? "image" : parsed.mode === "icon" ? "icon" : "text",
+      icon: typeof parsed.icon === "string" ? parsed.icon.slice(0, 80) : undefined,
       text: typeof parsed.text === "string" ? parsed.text.slice(0, 80) : "",
       font: wmFont(typeof parsed.font === "string" ? parsed.font : ""),
       color: typeof parsed.color === "string" && /^#[0-9a-fA-F]{6}$/.test(parsed.color) ? parsed.color : WM_DEFAULT.color,
@@ -1149,6 +1150,27 @@ export default function Editor({
   }
 
   useEffect(() => onFluentReady(() => setPaintTick((n) => n + 1)), []);
+
+  /** Marca de agua: un emoji o ícono de líneas pasa a ser el sello; un carácter de trazo se suma a la frase. */
+  function pickWmIcon(ch: string) {
+    if (ch.startsWith("fe:") || lucideNode(ch)) setWm((w) => ({ ...w, on: true, mode: "icon", icon: ch }));
+    else setWm((w) => ({ ...w, on: true, mode: "text", text: (w.text + ch).slice(0, 80) }));
+  }
+
+  /** Texto: un carácter de trazo se suma a la frase; un emoji o ícono de líneas se coloca desde la herramienta de íconos. */
+  function pickNoteIcon(ch: string) {
+    if (ch.startsWith("fe:") || lucideNode(ch)) {
+      setStickIcon(ch);
+      setTool("stick");
+      return;
+    }
+    const text = (noteText + ch).slice(0, 80);
+    setNoteText(text);
+    if (!pieceFresh.current && pieces.some((p) => p.id === pieceId && p.kind === "text")) {
+      snapPieces(`text${pieceId}`);
+      setPieces((list) => list.map((p) => (p.id === pieceId && p.kind === "text" ? { ...p, text } : p)));
+    }
+  }
 
   function pickStickIcon(ch: string) {
     setStickIcon(ch);
@@ -2893,13 +2915,10 @@ export default function Editor({
               </>
             ) : tool === "stick" ? (
               <>
-                <IconPalette label="Íconos color" items={WM_COLOR_ICONS} isOn={(ch) => stickIcon === ch} onPick={pickStickIcon} prefix="Usar" />
-                <FluentPalette isOn={(id) => stickIcon === id} onPick={pickStickIcon} />
-                <IconPalette label="Íconos trazo" items={WM_TRACE} isOn={(ch) => stickIcon === ch} onPick={pickStickIcon} prefix="Usar" ink={{ look: stickLook, c1: stickColor, c2: stickColor2, palette: stickPalette }} />
-                <IconPalette label="Pack de íconos" items={LUCIDE_STICKERS} isOn={(ch) => stickIcon === ch} onPick={pickStickIcon} prefix="Usar" ink={{ look: stickLook, c1: stickColor, c2: stickColor2, palette: stickPalette }} />
+                <IconBrowser isOn={(ch) => stickIcon === ch} onPick={pickStickIcon} ink={{ look: stickLook, c1: stickColor, c2: stickColor2, palette: stickPalette }} />
                 <Card title="Color y estilo">
                   <LookPicker look={stickLook} color={stickColor} color2={stickColor2} palette={stickPalette} onChange={patchStick} />
-                  {(WM_COLOR_ICONS.some((i) => i.ch === stickIcon) || stickIcon.startsWith("fe:")) && <p className="hint">Los íconos de color ya traen sus colores; esto vale para los de trazo.</p>}
+                  {stickIcon.startsWith("fe:") && <p className="hint">Los emojis ya traen sus colores; esto vale para los íconos de trazo y del pack.</p>}
                 </Card>
                 <Card title="Tamaño">
                 <OptRow
@@ -2985,6 +3004,11 @@ export default function Editor({
                   ))}
                 </select>
 </Card>
+<IconBrowser
+                  isOn={() => false}
+                  onPick={pickNoteIcon}
+                  ink={{ look: noteLook, c1: noteColor, c2: noteColor2, palette: notePalette }}
+                />
 <Card title="Color y estilo">
                   <LookPicker look={noteLook} color={noteColor} color2={noteColor2} palette={notePalette} onChange={patchNote} />
 </Card>
@@ -3057,6 +3081,13 @@ export default function Editor({
                   </button>
                   <button
                     type="button"
+                    className={wm.mode === "icon" ? "on" : ""}
+                    onClick={() => setWm((w) => ({ ...w, mode: "icon", on: true }))}
+                  >
+                    Ícono
+                  </button>
+                  <button
+                    type="button"
                     className={wm.mode === "image" ? "on" : ""}
                     onClick={() => setWm((w) => ({ ...w, mode: "image", on: true }))}
                   >
@@ -3082,6 +3113,8 @@ export default function Editor({
                   ))}
                 </select>
                                       </>
+                ) : wm.mode === "icon" ? (
+                  <p className="hint">Elige un emoji o un ícono de líneas abajo: se usa como sello, con el tamaño, giro, opacidad y mosaico de más abajo.</p>
                 ) : (
                   <>
                     <button type="button" className="btn-ghost editor-wm-file" onClick={() => wmFileRef.current?.click()}>
@@ -3102,16 +3135,19 @@ export default function Editor({
                   </>
                 )}
                 </Card>
-                {wm.mode === "text" && (
+                {(wm.mode === "text" || wm.mode === "icon") && (
                   <>
-<IconPalette label="Íconos color" items={WM_COLOR_ICONS} onPick={(ch) => setWm((w) => ({ ...w, on: true, mode: "text", text: (w.text + ch).slice(0, 80) }))} prefix="Agregar" />
-                    <IconPalette label="Íconos trazo" items={WM_TRACE} onPick={(ch) => setWm((w) => ({ ...w, on: true, mode: "text", text: (w.text + ch).slice(0, 80) }))} prefix="Agregar" />
+                    <IconBrowser
+                      isOn={(ch) => wm.mode === "icon" && wm.icon === ch}
+                      onPick={pickWmIcon}
+                      ink={{ look: wm.look ?? "solid", c1: wm.color, c2: wm.color2 ?? "#ff4fa3", palette: wm.palette ?? "rainbow" }}
+                    />
                     <p className="hint">
-                      {wm.place === "tile"
-                        ? "Color conserva su tono. Trazo sigue el color de abajo. Se repite en diagonal."
-                        : "Color conserva su tono. Trazo sigue el color de abajo. Un solo sello."}
+                      {wm.mode === "icon"
+                        ? "Los emojis conservan sus colores; el color y estilo de abajo vale para los íconos de líneas."
+                        : "Trazo se agrega a la frase. Un emoji o un ícono de líneas pasa a modo Ícono y queda como sello."}
                     </p>
-                                        <Card title="Color y estilo">
+                    <Card title="Color y estilo">
                       <LookPicker
                         look={wm.look ?? "solid"}
                         color={wm.color}
@@ -3968,7 +4004,7 @@ function LookPicker(props: {
 const plain = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
 /** Emojis a color (Fluent Emoji Flat, Microsoft, MIT): por categoría o con buscador. Los SVG se cargan bajo demanda. */
-function FluentPalette(props: { isOn: (id: string) => boolean; onPick: (id: string) => void }) {
+function FluentBody(props: { isOn: (id: string) => boolean; onPick: (id: string) => void }) {
   const [bodies, setBodies] = useState<Record<string, string> | null>(null);
   const [cat, setCat] = useState(0);
   const [query, setQuery] = useState("");
@@ -3982,7 +4018,7 @@ function FluentPalette(props: { isOn: (id: string) => boolean; onPick: (id: stri
   const q = plain(query.trim());
   const items = q ? FLUENT_CATS.flatMap((c) => c.items).filter((i) => plain(i.tip).includes(q)) : FLUENT_CATS[cat].items;
   return (
-    <Card title="Emojis a color">
+    <>
       <input className="editor-wm-text" value={query} placeholder="Buscar: corazón, gato, fiesta…" onChange={(e) => setQuery(e.target.value)} />
       {!q && (
         <div className="fe-cats" role="group" aria-label="Categorías">
@@ -4001,64 +4037,56 @@ function FluentPalette(props: { isOn: (id: string) => boolean; onPick: (id: stri
           </button>
         ))}
       </div>
-    </Card>
+    </>
   );
 }
 
-function IconPalette({
-  items,
-  label,
-  onPick,
-  isOn,
-  prefix,
-  ink,
-}: {
-  items: readonly { readonly ch: string; readonly tip: string }[];
-  label: string;
-  onPick: (ch: string) => void;
-  isOn?: (ch: string) => boolean;
-  prefix: string;
-  /** Si se da, la vista previa muestra el color y estilo elegidos (solo íconos de trazo). */
-  ink?: StickInk;
-}) {
-  const [more, setMore] = useState(false);
+/** Una celda de las paletas de íconos: ícono del pack, texto de trazo o, con `ink`, la vista previa del color y estilo elegidos. */
+function IconCell(props: { icon: { ch: string; tip: string }; ink?: StickInk; on: boolean; prefix: string; onPick: (ch: string) => void }) {
+  const { icon, ink } = props;
   return (
-    <Card
-      title={label}
-      action={
-        <button type="button" className="editor-more" title={more ? "Mostrar una sola fila" : "Mostrar todos"} onClick={() => setMore((v) => !v)}>
-          {more ? "menos ▴" : "más ▾"}
-        </button>
-      }
-    >
-      <div className={`editor-wm-icons ${more ? "more" : "fold"}`}>
-        {items.map((icon) => (
-          <button
-            key={icon.ch}
-            type="button"
-            className={isOn?.(icon.ch) ? "on" : ""}
-            title={`${prefix} ${icon.tip}`}
-            onClick={() => onPick(icon.ch)}
-          >
-            {lucideNode(icon.ch) ? (
-              <LucideSticker icon={icon.ch} ink={ink} />
-            ) : ink ? (
-              <span
-                className="ink-glyph"
-                style={
-                  inkStops(ink).length === 1
-                    ? { color: ink.c1 }
-                    : { backgroundImage: inkCss(ink), WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }
-                }
-              >
-                {icon.ch}
-              </span>
-            ) : (
-              icon.ch
-            )}
+    <button type="button" className={props.on ? "on" : ""} title={`${props.prefix} ${icon.tip}`} onClick={() => props.onPick(icon.ch)}>
+      {lucideNode(icon.ch) ? (
+        <LucideSticker icon={icon.ch} ink={ink} />
+      ) : ink ? (
+        <span
+          className="ink-glyph"
+          style={
+            inkStops(ink).length === 1
+              ? { color: ink.c1 }
+              : { backgroundImage: inkCss(ink), WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }
+          }
+        >
+          {icon.ch}
+        </span>
+      ) : (
+        icon.ch
+      )}
+    </button>
+  );
+}
+
+/** Una sola tarjeta de íconos con tres subconjuntos: emojis a color, íconos de trazo y el pack de líneas. */
+function IconBrowser(props: { isOn: (ch: string) => boolean; onPick: (ch: string) => void; ink: StickInk }) {
+  const [tab, setTab] = useState<"emoji" | "trazo" | "pack">("emoji");
+  return (
+    <Card title="Íconos">
+      <div className="editor-seg" role="group" aria-label="Tipo de ícono">
+        {([["emoji", "Emojis"], ["trazo", "Trazo"], ["pack", "Líneas"]] as const).map(([id, name]) => (
+          <button key={id} type="button" className={tab === id ? "on" : ""} onClick={() => setTab(id)}>
+            {name}
           </button>
         ))}
       </div>
+      {tab === "emoji" ? (
+        <FluentBody isOn={props.isOn} onPick={props.onPick} />
+      ) : (
+        <div className="editor-wm-icons more fe-grid">
+          {(tab === "trazo" ? WM_TRACE : LUCIDE_STICKERS).map((icon) => (
+            <IconCell key={icon.ch} icon={icon} ink={props.ink} on={props.isOn(icon.ch)} prefix="Usar" onPick={props.onPick} />
+          ))}
+        </div>
+      )}
     </Card>
   );
 }
