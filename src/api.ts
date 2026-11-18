@@ -95,7 +95,7 @@ export function launchFolder() {
   return invoke<string | null>("launch_folder");
 }
 
-export function saveEdit(source: string, dataB64: string, mode: "copy" | "replace", format: "png" | "jpeg") {
+export function saveEdit(source: string, dataB64: string, mode: "copy" | "replace", format: "png" | "jpeg" | "webp" | "avif") {
   return invoke<string>("save_edit", { source, dataB64, mode, format });
 }
 
@@ -154,4 +154,29 @@ export function catalogSet(paths: string[], rating: number | null, label: string
 
 export function watchFolder(path: string) {
   return invoke<void>("watch_folder", { path });
+}
+
+export type ExifSummary = {
+  camera: string | null;
+  lens: string | null;
+  taken: string | null;
+  exposure: string | null;
+  aperture: string | null;
+  iso: string | null;
+  focal: string | null;
+  lat: number | null;
+  lon: number | null;
+};
+
+export function fileExif(path: string) {
+  return invoke<ExifSummary>("file_exif", { path });
+}
+
+export function stripGps(paths: string[]) {
+  return invoke<BatchReport>("strip_gps", { paths });
+}
+
+/** Grupos de fotos duplicadas o muy parecidas de una carpeta. `maxDist` 0-16: más alto = más permisivo. */
+export function findSimilar(folder: string, maxDist?: number) {
+  return invoke<string[][]>("find_similar", { folder, maxDist });
 }

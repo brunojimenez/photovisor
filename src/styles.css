@@ -683,3 +683,16 @@ img, video { display: block; }
 .menu-labels button.dot.on { opacity: 1; border-color: #fff; }
 .menu button.on { color: #fff; background: #242424; }
 
+
+/* EXIF en el panel de vista previa */
+.exif { margin-top: 2px; }
+.exif .meta { margin: 0; }
+.exif .text-btn { padding: 0 6px; font-size: 12px; }
+
+/* duplicados */
+.dialog.dupes { width: min(560px, calc(100% - 32px)); max-height: calc(100% - 64px); display: flex; flex-direction: column; }
+.dupes-list { overflow: auto; margin-bottom: 14px; display: grid; gap: 10px; }
+.dupes-group { display: grid; gap: 4px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; }
+.dupes-item { display: flex; align-items: center; gap: 10px; margin: 0 !important; cursor: pointer; }
+.dupes-thumb { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; background: var(--line); flex: none; }
+.dupes-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

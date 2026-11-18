@@ -7,6 +7,10 @@ import {
   deletePermanent,
   openExternal,
   fileInfo,
+  fileExif,
+  stripGps,
+  findSimilar,
+  type ExifSummary,
   COMPUTER,
   goUp as goUpApi,
   launchArgs,
@@ -179,6 +183,10 @@ export default function App() {
     }
   }, [sideW, previewH, foldersOpen, iconSize, folderView, previewMode, sortKey, sortDir]);
   const [info, setInfo] = useState<FileInfo | null>(null);
+  const [exif, setExif] = useState<ExifSummary | null>(null);
+  const [dupes, setDupes] = useState<string[][] | null>(null);
+  const [dupBusy, setDupBusy] = useState(false);
+  const [dupPick, setDupPick] = useState<Record<string, boolean>>({});
   const [columns, setColumns] = useState(4);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -541,6 +549,60 @@ export default function App() {
       live = false;
     };
   }, [focus, files]);
+
+  useEffect(() => {
+    const entry = files.find((item) => item.path === focus);
+    if (!focus || !entry || entry.kind !== "image") {
+      setExif(null);
+      return;
+    }
+    let live = true;
+    fileExif(focus)
+      .then((next) => {
+        if (live) setExif(next);
+      })
+      .catch(() => {
+        if (live) setExif(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [focus, files]);
+
+  async function removeGps() {
+    if (!focus) return;
+    try {
+      const report = await stripGps([focus]);
+      setToast(report.done.length > 0 ? "Ubicación quitada del archivo." : report.errors[0] ?? "Esta foto no tenía ubicación.");
+      setExif(await fileExif(focus));
+    } catch (error) {
+      setToast(String(error));
+    }
+  }
+
+  async function scanDuplicates() {
+    if (!current || dupBusy) return;
+    setDupBusy(true);
+    setToast("Buscando fotos parecidas…");
+    try {
+      const groups = await findSimilar(current);
+      // en cada grupo se conserva la foto más pesada y se marcan las demás
+      const sizeOf = (path: string) => files.find((item) => item.path === path)?.size ?? 0;
+      const pick: Record<string, boolean> = {};
+      for (const group of groups) {
+        const keep = group.reduce((best, path) => (sizeOf(path) > sizeOf(best) ? path : best), group[0]);
+        for (const path of group) pick[path] = path !== keep;
+      }
+      setDupPick(pick);
+      setDupes(groups);
+      if (groups.length === 0) setToast("No encontré fotos duplicadas ni muy parecidas en esta carpeta.");
+      else setToast(null);
+    } catch (error) {
+      setToast(String(error));
+    } finally {
+      setDupBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (!focus || viewer) return;
@@ -979,7 +1041,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
 
-  async function onEditorSave(blob: Blob, _pin: boolean, mode: "copy" | "replace", format: "png" | "jpeg" = "png") {
+  async function onEditorSave(blob: Blob, _pin: boolean, mode: "copy" | "replace", format: "png" | "jpeg" | "webp" | "avif" = "png") {
     if (!focus || !current) return;
     const dataB64 = bytesToBase64(new Uint8Array(await blob.arrayBuffer()));
     await saveEdit(focus, dataB64, mode, format);
@@ -1290,7 +1352,7 @@ export default function App() {
             )
             )}
           </div>
-          {focused && <PreviewText entry={focused} info={info} />}
+          {focused && <PreviewText entry={focused} info={info} exif={exif} onStripGps={() => void removeGps()} />}
           {focused && isMedia(focused) && (
             <RatingBar meta={meta[focused.path]} onRate={(rating) => void applyMeta({ rating })} onLabel={(label) => void applyMeta({ label })} />
           )}
@@ -1392,6 +1454,11 @@ export default function App() {
                   <button className={sortKey === "size" ? "on" : ""} title={sortKey === "size" && sortDir === "desc" ? "Peso, descendente" : "Peso, ascendente"} aria-label="Ordenar por peso" onClick={() => toggleSort("size")}><SizeGlyph /></button>
                   <button title={sortDir === "asc" ? "Ascendente" : "Descendente"} aria-label={sortDir === "asc" ? "Ascendente" : "Descendente"} onClick={() => setSortDir((dir) => (dir === "asc" ? "desc" : "asc"))}>
                     {sortDir === "asc" ? <UpGlyph /> : <DownGlyph />}
+                  </button>
+                </div>
+                <div className="seg" role="group" aria-label="Duplicados">
+                  <button title="Buscar fotos duplicadas o parecidas en esta carpeta" aria-label="Buscar duplicados" disabled={dupBusy || !current} onClick={() => void scanDuplicates()}>
+                    <CopyGlyph />
                   </button>
                 </div>
               </div>
@@ -1527,6 +1594,47 @@ export default function App() {
           </div>
         </div>
       )}
+      {dupes && dupes.length > 0 && (
+        <div className="scrim">
+          <div className="dialog dupes" role="dialog" aria-modal="true">
+            <h2>Fotos duplicadas o parecidas</h2>
+            <p>
+              {dupes.length} grupo{dupes.length === 1 ? "" : "s"}. Dejé sin marcar la foto más pesada de cada uno; las marcadas van a la papelera.
+            </p>
+            <div className="dupes-list">
+              {dupes.map((group, index) => (
+                <div className="dupes-group" key={index}>
+                  {group.map((path) => (
+                    <label className="dupes-item" key={path} title={path}>
+                      <DupThumb path={path} />
+                      <span className="dupes-name">{path.split(/[\/]/).pop()}</span>
+                      <input
+                        type="checkbox"
+                        checked={!!dupPick[path]}
+                        onChange={(event) => setDupPick((prev) => ({ ...prev, [path]: event.target.checked }))}
+                      />
+                    </label>
+                  ))}
+                </div>
+              ))}
+            </div>
+            <div className="dialog-actions">
+              <button className="text-btn" onClick={() => setDupes(null)}>Cerrar</button>
+              <button
+                className="danger"
+                disabled={!dupes.some((group) => group.some((path) => dupPick[path]))}
+                onClick={() => {
+                  const paths = dupes.flat().filter((path) => dupPick[path]);
+                  setDupes(null);
+                  void remove(false, paths);
+                }}
+              >
+                A la papelera ({dupes.flat().filter((path) => dupPick[path]).length})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {confirmPaths && (
         <div className="scrim">
           <div className="dialog" role="dialog" aria-modal="true">
@@ -1603,7 +1711,15 @@ export default function App() {
           styleThumbs={STYLE_THUMBS}
           onCancel={requestCloseEditor}
           onDirtyChange={setEditorDirty}
-          outputType={/\.jpe?g$/i.test(focused.path) ? "image/jpeg" : "image/png"}
+          outputType={
+            /\.jpe?g$/i.test(focused.path)
+              ? "image/jpeg"
+              : /\.webp$/i.test(focused.path)
+                ? "image/webp"
+                : /\.avif$/i.test(focused.path)
+                  ? "image/avif"
+                  : "image/png"
+          }
           onSave={onEditorSave}
           onSuggestTilt={() => suggestTilt(focused.path)}
           startTool={editorStart.tool}
@@ -1615,9 +1731,12 @@ export default function App() {
   );
 }
 
-function PreviewText(props: { entry: Entry; info: FileInfo | null }) {
+function PreviewText(props: { entry: Entry; info: FileInfo | null; exif: ExifSummary | null; onStripGps: () => void }) {
   const dims =
     props.info?.width && props.info.height ? `${props.info.width} × ${props.info.height}` : props.entry.kind === "video" ? "Video" : "";
+  const e = props.exif;
+  const shot = e ? [e.focal, e.aperture, e.exposure, e.iso ? `ISO ${e.iso}` : null].filter(Boolean).join(" · ") : "";
+  const hasGps = e?.lat != null && e.lon != null;
   return (
     <>
       <p className="name">{props.entry.name}</p>
@@ -1626,6 +1745,22 @@ function PreviewText(props: { entry: Entry; info: FileInfo | null }) {
           .filter(Boolean)
           .join(" · ")}
       </p>
+      {e && (e.camera || e.lens || e.taken || shot || hasGps) && (
+        <div className="exif">
+          {e.camera && <p className="meta">{e.camera}</p>}
+          {e.lens && <p className="meta">{e.lens}</p>}
+          {shot && <p className="meta">{shot}</p>}
+          {e.taken && <p className="meta">{e.taken}</p>}
+          {hasGps && (
+            <p className="meta">
+              Ubicación: {e.lat!.toFixed(5)}, {e.lon!.toFixed(5)}{" "}
+              <button className="text-btn" title="Borra las coordenadas GPS del archivo; la foto no cambia" onClick={props.onStripGps}>
+                Quitar
+              </button>
+            </p>
+          )}
+        </div>
+      )}
     </>
   );
 }
@@ -1832,6 +1967,20 @@ function folderSummary(entry: Entry) {
   if (entry.hidden) parts.push(`${entry.hidden} ${entry.hidden === 1 ? "oculto" : "ocultos"}`);
   if (entry.others) parts.push(`${entry.others} ${entry.others === 1 ? "otro archivo" : "otros archivos"}`);
   return parts.length > 0 ? parts.join(" · ") : "Vacía";
+}
+
+function DupThumb(props: { path: string }) {
+  const [src, setSrc] = useState("");
+  useEffect(() => {
+    let live = true;
+    thumbnail(props.path, 128, "sharp")
+      .then((b64) => live && setSrc(`data:image/jpeg;base64,${b64}`))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [props.path]);
+  return src ? <img className="dupes-thumb" src={src} alt="" /> : <span className="dupes-thumb" />;
 }
 
 function NativeGlyph() {

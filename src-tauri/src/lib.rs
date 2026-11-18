@@ -1,6 +1,7 @@
 mod catalog;
 mod codec;
 mod config;
+mod extras;
 mod files;
 mod thumbs;
 mod watch;
@@ -261,6 +262,68 @@ fn file_info(state: tauri::State<AppState>, path: String) -> Result<FileInfo, St
     files::file_info(&file)
 }
 
+/// Datos de cámara y ubicación de una foto, ya legibles. Vacío si no tiene EXIF.
+#[tauri::command]
+async fn file_exif(state: tauri::State<'_, AppState>, path: String) -> Result<extras::ExifSummary, String> {
+    let root = root_of(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let file = files::ensure_inside(&root, Path::new(&path))?;
+        Ok(extras::exif_summary(&file))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Quita la ubicación (GPS) de las fotos indicadas. No toca los píxeles.
+#[tauri::command]
+async fn strip_gps(state: tauri::State<'_, AppState>, paths: Vec<String>) -> Result<BatchReport, String> {
+    let root = root_of(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut report = BatchReport { done: Vec::new(), skipped: Vec::new(), errors: Vec::new() };
+        for raw in &paths {
+            let file = match files::ensure_inside(&root, Path::new(raw)) {
+                Ok(file) => file,
+                Err(_) => {
+                    report.errors.push(format!("{raw}: fuera de la carpeta"));
+                    continue;
+                }
+            };
+            match extras::strip_gps(&file) {
+                Ok(true) => report.done.push(files::nice_path(&file)),
+                Ok(false) => report.skipped.push(files::nice_path(&file)),
+                Err(err) => report.errors.push(format!("{}: {err}", file.file_name().unwrap_or_default().to_string_lossy())),
+            }
+        }
+        report
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Grupos de fotos duplicadas o muy parecidas dentro de una carpeta (no mira subcarpetas).
+#[tauri::command]
+async fn find_similar(state: tauri::State<'_, AppState>, folder: String, max_dist: Option<u32>) -> Result<Vec<Vec<String>>, String> {
+    let root = root_of(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = files::ensure_inside(&root, Path::new(&folder))?;
+        let mut paths: Vec<PathBuf> = std::fs::read_dir(&dir)
+            .map_err(|e| e.to_string())?
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| path.is_file() && files::kind_of(path) == Some("image"))
+            .collect();
+        paths.sort();
+        let hashes = extras::fingerprints(&paths);
+        let groups = extras::group_similar(&hashes, max_dist.unwrap_or(4).min(16));
+        Ok(groups
+            .into_iter()
+            .map(|group| group.into_iter().map(|i| files::nice_path(&paths[i])).collect())
+            .collect())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 async fn transform(
     state: tauri::State<'_, AppState>,
@@ -343,6 +406,8 @@ async fn save_edit(
         let bytes = match format.as_deref() {
             Some("jpeg") => codec::encode_jpeg(&bytes, codec::JPEG_QUALITY)?,
             Some("png") => codec::optimize_png(&bytes),
+            Some("webp") => extras::encode_webp(&bytes, extras::WEBP_QUALITY)?,
+            Some("avif") => extras::encode_avif(&bytes, extras::AVIF_QUALITY)?,
             _ => bytes,
         };
         let dest = files::save_image(&root, Path::new(&source), &bytes, &mode)?;
@@ -445,6 +510,17 @@ fn serve_media(
     if files::kind_of(&file).is_none() {
         return Err(http::StatusCode::NOT_FOUND);
     }
+    // formatos que el navegador no dibuja (EXR, HDR, QOI, TGA, PNM): se entrega el PNG ya convertido
+    if extras::needs_png(&files::extension(&file)) {
+        let png = extras::to_png(&file).map_err(|_| http::StatusCode::INTERNAL_SERVER_ERROR)?;
+        return http::Response::builder()
+            .status(http::StatusCode::OK)
+            .header(http::header::CONTENT_TYPE, "image/png")
+            .header(http::header::CACHE_CONTROL, "no-cache")
+            .header(http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+            .body(png)
+            .map_err(|_| http::StatusCode::INTERNAL_SERVER_ERROR);
+    }
     let meta = std::fs::metadata(&file).map_err(|_| http::StatusCode::NOT_FOUND)?;
     let size = meta.len();
     let video = files::kind_of(&file) == Some("video");
@@ -533,6 +609,9 @@ pub fn run() {
             list_dir,
             thumbnail,
             file_info,
+            file_exif,
+            strip_gps,
+            find_similar,
             transform,
             recycle,
             delete_permanent,

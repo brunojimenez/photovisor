@@ -10,7 +10,9 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-const IMAGE_EXT: &[&str] = &["jpg", "jpeg", "png", "gif", "webp", "bmp", "tif", "tiff"];
+const IMAGE_EXT: &[&str] = &[
+    "jpg", "jpeg", "png", "gif", "webp", "bmp", "tif", "tiff", "avif", "ico", "exr", "hdr", "qoi", "tga", "pbm", "pgm", "ppm", "pnm", "pam",
+];
 const VIDEO_EXT: &[&str] = &["mp4", "webm", "mov", "mkv", "avi", "m4v"];
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -81,6 +83,10 @@ pub fn mime_of(path: &Path) -> &'static str {
         "webp" => "image/webp",
         "bmp" => "image/bmp",
         "tif" | "tiff" => "image/tiff",
+        "avif" => "image/avif",
+        "ico" => "image/x-icon",
+        // lo que el navegador no dibuja se sirve convertido a PNG (ver extras::to_png)
+        ext if crate::extras::needs_png(ext) => "image/png",
         "mp4" | "m4v" => "video/mp4",
         "webm" => "video/webm",
         "mov" => "video/quicktime",
@@ -435,7 +441,7 @@ pub fn file_info(path: &Path) -> Result<FileInfo, String> {
     })
 }
 
-fn open_oriented(path: &Path) -> Result<DynamicImage, String> {
+pub(crate) fn open_oriented(path: &Path) -> Result<DynamicImage, String> {
     let reader = ImageReader::open(path).map_err(|e| e.to_string())?;
     let mut decoder = reader.into_decoder().map_err(|e| e.to_string())?;
     let orientation = decoder
@@ -467,7 +473,7 @@ pub fn thumbnail(path: &Path, max_edge: u32, sharp: bool, cache_dir: Option<&Pat
         }
     }
     let img = open_oriented(path)?;
-    let thumb = img.thumbnail(edge, edge);
+    let thumb = crate::extras::resize_fast(&img, edge);
     let rgb = thumb.to_rgb8();
     let mut bytes = Vec::new();
     let encoder = JpegEncoder::new_with_quality(&mut bytes, 80);
@@ -748,12 +754,18 @@ pub fn save_image(root: &Path, source: &Path, bytes: &[u8], mode: &str) -> Resul
         .to_string_lossy()
         .to_string();
     let jpeg = bytes.starts_with(&[0xFF, 0xD8]);
+    let webp = bytes.len() > 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP";
+    let avif = bytes.len() > 12 && &bytes[4..8] == b"ftyp" && matches!(&bytes[8..12], b"avif" | b"avis");
     let ext = if jpeg {
         if extension(&source) == "jpeg" { "jpeg" } else { "jpg" }
+    } else if webp {
+        "webp"
+    } else if avif {
+        "avif"
     } else {
         "png"
     };
-    let same_kind = if jpeg { is_jpeg(&source) } else { extension(&source) == "png" };
+    let same_kind = if jpeg { is_jpeg(&source) } else { extension(&source) == ext };
     let dest = if mode == "replace" && same_kind {
         source.clone()
     } else if mode == "replace" {

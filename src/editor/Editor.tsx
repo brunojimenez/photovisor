@@ -337,11 +337,11 @@ export default function Editor({
   src: string;
   onCancel: () => void;
   /** `format` dice en qué formato debe quedar el archivo; el blob siempre es un PNG sin pérdida. */
-  onSave: (blob: Blob, pin: boolean, mode: "copy" | "replace", format?: "png" | "jpeg") => Promise<void>;
+  onSave: (blob: Blob, pin: boolean, mode: "copy" | "replace", format?: "png" | "jpeg" | "webp" | "avif") => Promise<void>;
   /** Si se da, el panel de giro muestra «Auto»: devuelve los grados para enderezar la foto, o null. */
   onSuggestTilt?: () => Promise<number | null>;
   /** Formato al guardar. Por defecto PNG. */
-  outputType?: "image/png" | "image/jpeg";
+  outputType?: "image/png" | "image/jpeg" | "image/webp" | "image/avif";
   onInpaint?: (image: Blob, mask: Blob, prompt: string, pin: boolean, count?: number, engine?: string) => Promise<void>;
   onBgFix?: (image: Blob, opts: BgFixOpts, pin: boolean) => Promise<void>;
   onUpscale?: (
@@ -2154,7 +2154,7 @@ export default function Editor({
     setErr("");
     const keyAtSave = stateKey;
     try {
-      await onSave(await exportBlob(outScale, "image/png"), pin, mode, outputType === "image/jpeg" ? "jpeg" : "png");
+      await onSave(await exportBlob(outScale, "image/png"), pin, mode, outputType === "image/jpeg" ? "jpeg" : outputType === "image/webp" ? "webp" : outputType === "image/avif" ? "avif" : "png");
       setSavedKey(keyAtSave);
       setBusy(false);
     } catch (e) {
