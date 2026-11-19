@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { mediaUrl, type Entry, type Meta } from "./api";
+import { mediaUrl, type Entry, type FileInfo, type Meta } from "./api";
+import { formatSize } from "./format";
 import { RatingBar } from "./Rating";
+import { LookBar, LookPreview, rememberLook } from "./LookBar";
+import type { Preset } from "./editor/editorPresets";
 import { ChevronGlyph, FitGlyph, RatioGlyph, StudioGlyph } from "./icons";
-import { ArrowLeft, Film, Pause, Play, SlidersHorizontal, Trash2 } from "lucide-react";
+import { ArrowLeft, Film, Pause, Play, RotateCcw, RotateCw, SlidersHorizontal, Trash2 } from "lucide-react";
 
 type Props = {
   file: Entry;
@@ -22,6 +25,10 @@ type Props = {
   onStudio?: () => void;
   canEdit: boolean;
   meta?: Meta;
+  info?: FileInfo | null;
+  onRotate: (op: "left" | "right") => void;
+  /** Guarda la foto con el look: copia o reemplazo. Solo se llama cuando el usuario lo confirma. */
+  onApplyLook: (preset: Preset, amount: number, mode: "copy" | "replace") => Promise<void>;
   onRate: (rating: number) => void;
   onLabel: (label: string) => void;
   playing: boolean;
@@ -37,6 +44,14 @@ export function Viewer(props: Props) {
   const drag = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
   const [fit, setFit] = useState<"fit" | "ratio" | "native">("fit");
   const url = mediaUrl(props.file.path, props.file.modifiedMs);
+  const [look, setLook] = useState<Preset | null>(null);
+  const [lookAmount, setLookAmount] = useState(100);
+  const [lookReady, setLookReady] = useState(false);
+  const [lookBusy, setLookBusy] = useState(false);
+  useEffect(() => {
+    setLook(null);
+    setLookReady(false);
+  }, [props.file.path, props.file.modifiedMs]);
   const index = props.files.findIndex((entry) => entry.path === props.file.path);
   const previous = index > 0 ? props.files[index - 1] : null;
   const following = index >= 0 && index < props.files.length - 1 ? props.files[index + 1] : null;
@@ -60,6 +75,11 @@ export function Viewer(props: Props) {
           <ArrowLeft size={16} strokeWidth={1.75} aria-hidden />
         </button>
         <strong>{props.file.name}</strong>
+        <span className="viewer-meta">
+          {[props.info?.width && props.info.height ? `${props.info.width} × ${props.info.height}` : "", formatSize(props.info?.size ?? props.file.size)]
+            .filter(Boolean)
+            .join(" · ")}
+        </span>
         <RatingBar meta={props.meta} onRate={props.onRate} onLabel={props.onLabel} />
         <div className="seg" role="group" aria-label="Ajuste">
           <button
@@ -81,6 +101,16 @@ export function Viewer(props: Props) {
             <NativeGlyph />
           </button>
         </div>
+        {props.file.kind !== "video" && (
+          <div className="seg" role="group" aria-label="Girar">
+            <button title="Girar a la izquierda" aria-label="Girar a la izquierda" disabled={props.busy} onClick={() => props.onRotate("left")}>
+              <RotateCcw size={16} strokeWidth={1.75} aria-hidden />
+            </button>
+            <button title="Girar a la derecha" aria-label="Girar a la derecha" disabled={props.busy} onClick={() => props.onRotate("right")}>
+              <RotateCw size={16} strokeWidth={1.75} aria-hidden />
+            </button>
+          </div>
+        )}
         <button
           className="icon-btn primary"
           onClick={props.onEdit}
@@ -157,7 +187,38 @@ export function Viewer(props: Props) {
             style={fit === "fit" ? { transform: `translate(${props.pan.x}px, ${props.pan.y}px) scale(${props.zoom})` } : undefined}
           />
         )}
+        {look && props.file.kind === "image" && (
+          <LookPreview
+            url={url}
+            preset={look}
+            amount={lookAmount}
+            onReady={setLookReady}
+            style={fit === "fit" ? { transform: `translate(${props.pan.x}px, ${props.pan.y}px) scale(${props.zoom})` } : undefined}
+          />
+        )}
       </div>
+        {props.canEdit && props.file.kind === "image" && (
+          <LookBar
+            active={look}
+            amount={lookAmount}
+            ready={lookReady}
+            busy={lookBusy || props.busy}
+            onPick={(preset) => {
+              setLook(preset);
+              setLookReady(false);
+              if (preset) {
+                rememberLook(preset.id);
+                setLookAmount(100);
+              }
+            }}
+            onAmount={setLookAmount}
+            onSave={(mode) => {
+              if (!look) return;
+              setLookBusy(true);
+              props.onApplyLook(look, lookAmount, mode).finally(() => setLookBusy(false));
+            }}
+          />
+        )}
         <button
           className="nav-arrow left"
           title="Anterior"

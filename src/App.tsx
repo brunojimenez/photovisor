@@ -58,6 +58,8 @@ import {
   type SortKey,
 } from "./format";
 import { STYLE_THUMBS } from "./editor/styleThumbs";
+import { renderLookBlob } from "./LookBar";
+import type { Preset } from "./editor/editorPresets";
 import { Badge, LABELS, RatingBar } from "./Rating";
 import { Breadcrumb } from "./Breadcrumb";
 import { Tree } from "./Tree";
@@ -734,8 +736,8 @@ export default function App() {
     setSelected(still.length > 0 ? still : next ? [next] : []);
   }
 
-  async function runTransform(op: "left" | "right" | "flipv" | "fliph") {
-    const paths = targets().filter((path) => files.find((entry) => entry.path === path)?.kind !== "dir");
+  async function runTransform(op: "left" | "right" | "flipv" | "fliph", only?: string[]) {
+    const paths = (only ?? targets()).filter((path) => files.find((entry) => entry.path === path)?.kind !== "dir");
     if (paths.length === 0 || busy || !current) return;
     setBusy(true);
     try {
@@ -1164,6 +1166,28 @@ export default function App() {
     setEditBase(editing && focused ? mediaUrl(focused.path, focused.modifiedMs) : "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
+
+  /** Look desde el visor: se ve primero como vista previa y solo aquí se escribe el archivo. */
+  async function applyLookToFile(preset: Preset, amount: number, mode: "copy" | "replace") {
+    if (!focus || !current) return;
+    const entry = files.find((item) => item.path === focus);
+    try {
+      const blob = await renderLookBlob(mediaUrl(focus, entry?.modifiedMs ?? Date.now()), preset, amount);
+      const format = /\.jpe?g$/i.test(focus) ? "jpeg" : /\.webp$/i.test(focus) ? "webp" : /\.avif$/i.test(focus) ? "avif" : "png";
+      const dataB64 = bytesToBase64(new Uint8Array(await blob.arrayBuffer()));
+      const saved = await saveEdit(focus, dataB64, mode, format);
+      const view = await listDir(current);
+      rememberDirs(view);
+      setFiles(view.entries);
+      setFocus(saved);
+      setSelected([saved]);
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+      setToast(mode === "replace" ? `Look «${preset.label}» aplicado a la foto.` : `Copia con el look «${preset.label}» guardada.`);
+    } catch (error) {
+      setToast(String(error));
+    }
+  }
 
   async function onEditorSave(blob: Blob, _pin: boolean, mode: "copy" | "replace", format: "png" | "jpeg" | "webp" | "avif" = "png") {
     if (!focus || !current) return;
@@ -1778,6 +1802,9 @@ export default function App() {
           files={photos}
           filmstrip={config.filmstrip}
           meta={meta[focused.path]}
+          info={info}
+          onRotate={(op) => void runTransform(op, [focused.path])}
+          onApplyLook={applyLookToFile}
           onRate={(rating) => void applyMeta({ rating })}
           onLabel={(label) => void applyMeta({ label })}
           zoom={zoom}
@@ -2071,6 +2098,7 @@ export default function App() {
           local
           folderSave
           styleThumbs={STYLE_THUMBS}
+          caption={[focused.name, info?.width && info.height ? `${info.width} × ${info.height}` : "", formatSize(info?.size ?? focused.size)].filter(Boolean).join(" · ")}
           onCancel={requestCloseEditor}
           onDirtyChange={setEditorDirty}
           outputType={

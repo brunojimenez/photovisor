@@ -148,6 +148,7 @@ export default function Editor({
   local = false,
   folderSave = false,
   onDirtyChange,
+  caption,
 }: {
   src: string;
   onCancel: () => void;
@@ -185,6 +186,8 @@ export default function Editor({
   folderSave?: boolean;
   /** Avisa si hay cambios sin guardar. */
   onDirtyChange?: (dirty: boolean) => void;
+  /** Texto junto al botón Volver: nombre, dimensión y peso de la foto. */
+  caption?: string;
 }) {
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -951,6 +954,21 @@ export default function Editor({
     setAdj((a) => ({ ...a, levels: autoLevels(histo.l) }));
   }
 
+  const [recentLooks, setRecentLooks] = useState<string[]>(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem("pv.recentLooks") || "[]");
+      return Array.isArray(raw) ? raw.filter((id) => typeof id === "string") : [];
+    } catch {
+      return [];
+    }
+  });
+  const [allLooks, setAllLooks] = useState(false);
+  /** Los últimos looks usados (máx. 8); si faltan, se completan con los primeros de la lista. */
+  const quickLooks = (() => {
+    const ids = [...recentLooks.filter((id) => PRESETS.some((p) => p.id === id)), ...PRESETS.map((p) => p.id)];
+    return [...new Set(ids)].slice(0, 8).map((id) => PRESETS.find((p) => p.id === id)!);
+  })();
+
   function chooseLook(id: string) {
     if (!id) {
       setAdj(adjBeforeLook.current ?? ADJUST_ZERO);
@@ -961,6 +979,13 @@ export default function Editor({
     const preset = PRESETS.find((p) => p.id === id);
     if (!preset) return;
     if (!presetId) adjBeforeLook.current = adj;
+    const recent = [id, ...recentLooks.filter((x) => x !== id)].slice(0, 8);
+    setRecentLooks(recent);
+    try {
+      localStorage.setItem("pv.recentLooks", JSON.stringify(recent));
+    } catch {
+      /* sin almacenamiento: no se recuerdan */
+    }
     setPresetId(id);
     setAdj(presetAdjust(preset, presetAmt));
   }
@@ -2252,6 +2277,23 @@ export default function Editor({
           >
             <GlyphIcon name="back" size={16} />
           </button>
+          {ready && tool !== "fill" && (
+            <div className="editor-quick" onPointerDown={(e) => e.stopPropagation()}>
+              {quickLooks.slice(0, 6).map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className={`editor-quick-chip ${presetId === p.id ? "on" : ""}`}
+                  title={`Look «${p.label}»`}
+                  onClick={() => chooseLook(presetId === p.id ? "" : p.id)}
+                >
+                  <i style={{ background: `linear-gradient(135deg, ${p.swatch[0]}, ${p.swatch[1]})` }} />
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          )}
+          {caption && <div className="editor-caption" title={caption}>{caption}</div>}
           {compare && <div className="editor-compare-tag">Original</div>}
           {ready && (
             <div className="editor-stage-tools" onPointerDown={(e) => e.stopPropagation()}>
@@ -2344,70 +2386,49 @@ export default function Editor({
             </div>
           )}
           <div className="editor-zoom" onPointerDown={(e) => e.stopPropagation()}>
-            <div className="editor-zoom-fits">
-              <button
-                type="button"
-                className={`editor-zoom-sq ${zoomPct === 100 ? "on" : ""}`}
-                title="Tamaño real 100%"
-                onClick={() => fitTo("100")}
-              >
-                100%
-              </button>
-              <button
-                type="button"
-                className="editor-zoom-sq"
-                title="Ajuste vertical (alto de la ventana)"
-                onClick={() => fitTo("v")}
-              >
-                <GlyphIcon name="fitv" size={18} />
-              </button>
-              <button
-                type="button"
-                className="editor-zoom-sq"
-                title="Ajuste horizontal (ancho de la ventana)"
-                onClick={() => fitTo("h")}
-              >
-                <GlyphIcon name="fith" size={18} />
-              </button>
-              <button type="button" className="editor-zoom-sq" title="Ajustar a la ventana (0)" onClick={centerFit}>
-                <GlyphIcon name="fitbox" size={18} />
-              </button>
-            </div>
-            <div className="editor-zoom-row">
-              <select
-                className="editor-zoom-pct"
-                value={zoomPct === fitPct ? "fit" : String(zoomPct)}
-                onChange={(e) => {
-                  if (e.target.value === "fit") centerFit();
-                  else setZoomPct(Number(e.target.value));
-                }}
-              >
-                <option value="fit">{fitPct}%</option>
-                {[25, 50, 75, 100, 150, 200].map((n) => (
-                  <option key={n} value={String(n)}>
-                    {n}%
-                  </option>
-                ))}
-                {![25, 50, 75, 100, 150, 200].includes(zoomPct) && zoomPct !== fitPct && (
-                  <option value={String(zoomPct)}>{zoomPct}%</option>
-                )}
-              </select>
-              <input
-                type="range"
-                className="editor-zoom-range"
-                min={Math.max(5, Math.min(fitPct, 25))}
-                max={400}
-                step={1}
-                value={Math.min(400, zoomPct)}
-                onChange={(e) => setZoomPct(Number(e.target.value))}
-              />
-              <button type="button" className="editor-zoom-btn" title="Alejar (−)" onClick={() => zoomBy(1 / 1.2)}>
-                −
-              </button>
-              <button type="button" className="editor-zoom-btn" title="Acercar (+)" onClick={() => zoomBy(1.2)}>
-                +
-              </button>
-            </div>
+            <button type="button" className={`editor-zoom-sq ${zoomPct === 100 ? "on" : ""}`} title="Tamaño real 100%" onClick={() => fitTo("100")}>
+              1:1
+            </button>
+            <button type="button" className="editor-zoom-sq" title="Ajuste vertical (alto de la ventana)" onClick={() => fitTo("v")}>
+              <GlyphIcon name="fitv" size={14} />
+            </button>
+            <button type="button" className="editor-zoom-sq" title="Ajuste horizontal (ancho de la ventana)" onClick={() => fitTo("h")}>
+              <GlyphIcon name="fith" size={14} />
+            </button>
+            <button type="button" className="editor-zoom-sq" title="Ajustar a la ventana (0)" onClick={centerFit}>
+              <GlyphIcon name="fitbox" size={14} />
+            </button>
+            <span className="editor-zoom-sep" aria-hidden />
+            <button type="button" className="editor-zoom-sq" title="Girar 90° a la izquierda" aria-label="Girar a la izquierda" onClick={() => turn(-90)}>
+              <GlyphIcon name="rotl" size={16} />
+            </button>
+            <button type="button" className="editor-zoom-sq" title="Girar 90° a la derecha" aria-label="Girar a la derecha" onClick={() => turn(90)}>
+              <GlyphIcon name="rotr" size={16} />
+            </button>
+            <span className="editor-zoom-sep" aria-hidden />
+            <button type="button" className="editor-zoom-btn" title="Alejar (−)" onClick={() => zoomBy(1 / 1.2)}>
+              −
+            </button>
+            <select
+              className="editor-zoom-pct"
+              title="Zoom"
+              value={zoomPct === fitPct ? "fit" : String(zoomPct)}
+              onChange={(e) => {
+                if (e.target.value === "fit") centerFit();
+                else setZoomPct(Number(e.target.value));
+              }}
+            >
+              <option value="fit">{fitPct}%</option>
+              {[25, 50, 75, 100, 150, 200].map((n) => (
+                <option key={n} value={String(n)}>
+                  {n}%
+                </option>
+              ))}
+              {![25, 50, 75, 100, 150, 200].includes(zoomPct) && zoomPct !== fitPct && <option value={String(zoomPct)}>{zoomPct}%</option>}
+            </select>
+            <button type="button" className="editor-zoom-btn" title="Acercar (+)" onClick={() => zoomBy(1.2)}>
+              +
+            </button>
           </div>
         </div>
         <aside className="editor-side" style={{ width: sideW, flex: `0 0 ${sideW}px` }}>
@@ -2557,7 +2578,7 @@ export default function Editor({
                     >
                       Ninguno
                     </button>
-                    {PRESETS.map((p) => (
+                    {(allLooks ? PRESETS : quickLooks).map((p) => (
                       <button
                         key={p.id}
                         type="button"
@@ -2569,6 +2590,14 @@ export default function Editor({
                         {p.label}
                       </button>
                     ))}
+                    <button
+                      type="button"
+                      className="editor-look editor-look-more"
+                      title={allLooks ? "Mostrar solo los últimos usados" : "Ver todos los looks"}
+                      onClick={() => setAllLooks((v) => !v)}
+                    >
+                      {allLooks ? "Menos" : "Todos"}
+                    </button>
                   </div>
                   {presetId && <SliderRow icon="power" label="Intensidad" value={presetAmt} min={0} max={100} def={100} onChange={setLookAmount} />}
                 </Card>

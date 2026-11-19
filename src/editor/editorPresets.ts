@@ -10,6 +10,12 @@ export type Preset = {
 
 /** Looks mínimos. Cada uno es un conjunto de ajustes; la intensidad los escala de 0 a 100 %. */
 export const PRESETS: Preset[] = [
+  {
+    id: "mine",
+    label: "Hora dorada",
+    swatch: ["#f6c177", "#3a2a4a"],
+    values: { brightness: 15, contrast: 5, shadows: 15, white: 10, black: 10, vignette: 30, marco: 20, saturate: 5, warmth: 20, detail: 10, sharp: 10 },
+  },
   { id: "vivid", label: "Vívido", swatch: ["#ff5f6d", "#ffc371"], values: { saturate: 35, contrast: 12, hdr: 8, detail: 10 } },
   { id: "warm", label: "Cálido", swatch: ["#f6a04d", "#f2d49b"], values: { warmth: 28, saturate: 8, brightness: 4, highlights: -10, tint: 4 } },
   { id: "cool", label: "Frío", swatch: ["#4a7cf0", "#9fd6e8"], values: { warmth: -26, saturate: 6, contrast: 6, blue: 10 } },
