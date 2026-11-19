@@ -112,6 +112,16 @@ export function suggestTilt(path: string) {
   return invoke<number | null>("suggest_tilt", { path });
 }
 
+/** Crea «Nueva carpeta» dentro de `parent` y devuelve su ruta. */
+export function createFolder(parent: string) {
+  return invoke<string>("create_folder", { parent });
+}
+
+/** Abre el Explorador de Windows con esto seleccionado. */
+export function revealInExplorer(path: string) {
+  return invoke<void>("reveal_in_explorer", { path });
+}
+
 export function renameFile(path: string, name: string) {
   return invoke<string>("rename_file", { path, name });
 }

@@ -653,7 +653,7 @@ pub fn transform_many(root: &Path, paths: &[String], op: &str) -> BatchReport {
     report
 }
 
-pub fn paste_files(dest_dir: &Path, sources: &[String], cut: bool) -> (BatchReport, Vec<(String, String)>) {
+pub fn paste_files(dest_dir: &Path, sources: &[String], cut: bool) -> (BatchReport, Vec<(String, String, bool)>) {
     let mut report = BatchReport {
         done: Vec::new(),
         skipped: Vec::new(),
@@ -672,7 +672,7 @@ pub fn paste_files(dest_dir: &Path, sources: &[String], cut: bool) -> (BatchRepo
             Ok(path) => {
                 let shown = nice_path(&path);
                 if &shown != source {
-                    moved.push((source.clone(), shown.clone()));
+                    moved.push((source.clone(), shown.clone(), path.is_dir()));
                 }
                 report.done.push(shown);
             }
@@ -684,23 +684,70 @@ pub fn paste_files(dest_dir: &Path, sources: &[String], cut: bool) -> (BatchRepo
 
 fn paste_one(dest_dir: &Path, source: &Path, cut: bool) -> Result<PathBuf, String> {
     let source = canonical(source)?;
-    if !source.is_file() {
-        return Err("no es un archivo".into());
+    let is_dir = source.is_dir();
+    if !is_dir && !source.is_file() {
+        return Err("no existe".into());
     }
-    if kind_of(&source).is_none() {
-        return Err("ese archivo no es una foto ni un video".into());
+    if is_dir && dest_dir.starts_with(&source) {
+        return Err("no se puede pegar una carpeta dentro de sí misma".into());
     }
     let same_dir = source.parent() == Some(dest_dir);
     if cut && same_dir {
         return Ok(source);
     }
-    let name = source.file_name().ok_or("el archivo no tiene nombre")?;
+    let name = source.file_name().ok_or("no tiene nombre")?;
+    if is_dir {
+        let target = if same_dir {
+            unique_dir_name(dest_dir, std::ffi::OsStr::new(&format!("{} - copia", name.to_string_lossy())))
+        } else {
+            unique_dir_name(dest_dir, name)
+        };
+        if cut {
+            fs::rename(&source, &target).map_err(|error| error.to_string())?;
+        } else {
+            copy_dir(&source, &target)?;
+        }
+        return Ok(target);
+    }
     let target = unique_name(dest_dir, name, !cut && same_dir);
     fs::copy(&source, &target).map_err(|error| error.to_string())?;
     if cut {
         fs::remove_file(&source).map_err(|error| error.to_string())?;
     }
     Ok(target)
+}
+
+fn copy_dir(from: &Path, to: &Path) -> Result<(), String> {
+    fs::create_dir_all(to).map_err(|e| e.to_string())?;
+    for entry in fs::read_dir(from).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let target = to.join(entry.file_name());
+        if entry.path().is_dir() {
+            copy_dir(&entry.path(), &target)?;
+        } else {
+            fs::copy(entry.path(), &target).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+/// Abre el Explorador de Windows con el archivo o carpeta seleccionado.
+pub fn reveal_in_explorer(path: &Path) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let shown = nice_path(path);
+        std::process::Command::new("explorer.exe")
+            .raw_arg(format!("/select,\"{shown}\""))
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        Err("solo disponible en Windows".into())
+    }
 }
 
 /// Mueve archivos y carpetas a `dest_dir`.
@@ -969,6 +1016,17 @@ pub fn rename_entry(root: &Path, path: &Path, new_name: &str) -> Result<PathBuf,
     }
     fs::rename(&path, &dest).map_err(|e| e.to_string())?;
     Ok(dest)
+}
+
+/// Crea «Nueva carpeta» (o «Nueva carpeta (2)», etc.) dentro de `parent` y devuelve su ruta.
+pub fn create_folder(root: &Path, parent: &Path) -> Result<PathBuf, String> {
+    let parent = ensure_inside(root, parent)?;
+    if !parent.is_dir() {
+        return Err("la carpeta de destino no existe".into());
+    }
+    let target = unique_dir_name(&parent, std::ffi::OsStr::new("Nueva carpeta"));
+    fs::create_dir(&target).map_err(|e| e.to_string())?;
+    Ok(target)
 }
 
 pub fn delete_many(root: &Path, paths: &[String]) -> BatchReport {
@@ -1251,5 +1309,92 @@ mod move_tests {
         let (report, _) = move_into(&t.0, &dest, &[source]);
         assert_eq!(report.done.len(), 1, "{:?}", report.errors);
         assert!(dest.join("notas.txt").exists());
+    }
+}
+
+#[cfg(test)]
+mod create_folder_tests {
+    use super::*;
+
+    fn temp(tag: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let dir = std::env::temp_dir().join(format!("pv-newdir-{tag}-{}-{nanos}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        canonical(&dir).unwrap()
+    }
+
+    #[test]
+    fn creates_and_numbers_new_folders() {
+        let root = temp("num");
+        let first = create_folder(&root, &root).unwrap();
+        let second = create_folder(&root, &root).unwrap();
+        assert!(first.ends_with("Nueva carpeta") && first.is_dir());
+        assert!(second.ends_with("Nueva carpeta (2)") && second.is_dir());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn refuses_a_parent_outside_the_open_folder() {
+        let outer = temp("out");
+        let inner = outer.join("abierta");
+        fs::create_dir_all(&inner).unwrap();
+        assert!(create_folder(&inner, &outer).is_err());
+        let _ = fs::remove_dir_all(&outer);
+    }
+}
+
+#[cfg(test)]
+mod paste_any_tests {
+    use super::*;
+
+    fn temp(tag: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let dir = std::env::temp_dir().join(format!("pv-paste-{tag}-{}-{nanos}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        canonical(&dir).unwrap()
+    }
+
+    #[test]
+    fn copies_a_folder_with_its_content() {
+        let root = temp("dir");
+        fs::create_dir_all(root.join("A/sub")).unwrap();
+        fs::write(root.join("A/sub/x.txt"), "x").unwrap();
+        fs::create_dir_all(root.join("B")).unwrap();
+        let (report, moved) = paste_files(&root.join("B"), &[nice_path(&root.join("A"))], false);
+        assert_eq!(report.done.len(), 1, "{:?}", report.errors);
+        assert!(root.join("A/sub/x.txt").exists(), "el original queda");
+        assert_eq!(fs::read_to_string(root.join("B/A/sub/x.txt")).unwrap(), "x");
+        assert!(moved[0].2);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn copying_a_folder_into_its_own_parent_adds_copia() {
+        let root = temp("same");
+        fs::create_dir_all(root.join("A")).unwrap();
+        let (report, _) = paste_files(&root, &[nice_path(&root.join("A"))], false);
+        assert_eq!(report.done.len(), 1, "{:?}", report.errors);
+        assert!(root.join("A - copia").is_dir());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_folder_cannot_be_pasted_inside_itself() {
+        let root = temp("self");
+        fs::create_dir_all(root.join("A/sub")).unwrap();
+        let (report, _) = paste_files(&root.join("A/sub"), &[nice_path(&root.join("A"))], false);
+        assert_eq!(report.errors.len(), 1);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn copies_any_kind_of_file() {
+        let root = temp("any");
+        fs::write(root.join("notas.txt"), "hola").unwrap();
+        fs::create_dir_all(root.join("B")).unwrap();
+        let (report, _) = paste_files(&root.join("B"), &[nice_path(&root.join("notas.txt"))], false);
+        assert_eq!(report.done.len(), 1, "{:?}", report.errors);
+        assert!(root.join("B/notas.txt").exists());
+        let _ = fs::remove_dir_all(&root);
     }
 }

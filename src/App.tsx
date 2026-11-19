@@ -26,6 +26,8 @@ import {
   openRoot,
   pasteFiles,
   moveTo,
+  createFolder,
+  revealInExplorer,
   recycle,
   renameFile,
   saveConfig,
@@ -62,7 +64,7 @@ import { Tree } from "./Tree";
 import { Viewer } from "./Viewer";
 import {
   ChevronGlyph, CloseGlyph, CompareGlyph, CopyGlyph, CutGlyph, EditGlyph, SettingsGlyph, StampGlyph, SpinnerGlyph, ToolsGlyph, DownGlyph, FilterGlyph, FitGlyph, FolderGlyph, GridGlyph, LargeGlyph, LinesGlyph,
-  FileGlyph, MoveGlyph, NameGlyph, PanelGlyph, PasteGlyph, RatioGlyph, SelectTypeGlyph, SizeGlyph, StudioGlyph, TrashGlyph, TypeGlyph, UpGlyph,
+  FileGlyph, MoveGlyph, NameGlyph, NewFolderGlyph, OpenGlyph, PathGlyph, RenameGlyph, RevealGlyph, PanelGlyph, PasteGlyph, RatioGlyph, SelectTypeGlyph, SizeGlyph, StudioGlyph, TrashGlyph, TypeGlyph, UpGlyph,
 } from "./icons";
 
 const VIEW = {
@@ -191,6 +193,7 @@ export default function App() {
     });
   const [previewMode, setPreviewMode] = useState<"fit" | "ratio" | "native">(SAVED.previewMode ?? "fit");
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [editorKey, setEditorKey] = useState(0);
   const [draft, setDraft] = useState("");
   const renamingRef = useRef<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>(SAVED.sortKey ?? "name");
@@ -851,6 +854,11 @@ export default function App() {
         void travel(1);
         return;
       }
+      if (ctrl && event.shiftKey && event.key.toLowerCase() === "n" && !viewer) {
+        event.preventDefault();
+        void newFolder();
+        return;
+      }
       if (ctrl && event.key.toLowerCase() === "a" && !viewer) {
         event.preventDefault();
         selectAll();
@@ -991,6 +999,69 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   });
 
+  /** Crea «Nueva carpeta» aquí y deja su nombre listo para escribir. */
+  async function newFolder() {
+    if (!current || current === COMPUTER || busy) return;
+    try {
+      const path = await createFolder(current);
+      await refresh(current, [path], 0);
+      const name = path.split(/[\\/]/).pop() ?? "Nueva carpeta";
+      startRename({ path, name } as Entry);
+    } catch (error) {
+      setToast(String(error));
+    }
+  }
+
+  const [menu, setMenu] = useState<{ x: number; y: number; entry: Entry | null } | null>(null);
+
+  function openMenu(event: MouseEvent, entry: Entry | null) {
+    event.preventDefault();
+    if (entry && !selected.includes(entry.path)) {
+      setSelected([entry.path]);
+      setFocus(entry.path);
+    }
+    setMenu({ x: event.clientX, y: event.clientY, entry });
+  }
+
+  async function revealSelected() {
+    const path = menu?.entry?.path ?? targets()[0] ?? current;
+    if (!path || path === COMPUTER) return;
+    try {
+      await revealInExplorer(path);
+    } catch (error) {
+      setToast(String(error));
+    }
+  }
+
+  async function copyPathText() {
+    const paths = menu?.entry ? targets() : current && current !== COMPUTER ? [current] : [];
+    if (paths.length === 0) return;
+    try {
+      await navigator.clipboard.writeText(paths.join("\n"));
+      setToast(paths.length === 1 ? "Ruta copiada." : `${paths.length} rutas copiadas.`);
+    } catch {
+      setToast("No se pudo copiar la ruta.");
+    }
+  }
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const key = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("blur", close);
+    window.addEventListener("resize", close);
+    window.addEventListener("keydown", key);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("blur", close);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("keydown", key);
+    };
+  }, [menu]);
+
   function startRename(entry: Entry) {
     renamingRef.current = entry.path;
     setRenaming(entry.path);
@@ -1097,12 +1168,19 @@ export default function App() {
   async function onEditorSave(blob: Blob, _pin: boolean, mode: "copy" | "replace", format: "png" | "jpeg" | "webp" | "avif" = "png") {
     if (!focus || !current) return;
     const dataB64 = bytesToBase64(new Uint8Array(await blob.arrayBuffer()));
-    await saveEdit(focus, dataB64, mode, format);
-    // El editor sigue abierto: solo se actualiza la lista, sin tocar la foto en edición.
+    const saved = await saveEdit(focus, dataB64, mode, format);
     const view = await listDir(current);
     rememberDirs(view);
     setFiles(view.entries);
-    setToast(mode === "replace" ? "Imagen guardada. Sigues editando." : "Copia guardada junto al original. Sigues editando.");
+    // Lo guardado pasa a ser la nueva base: el editor se reabre limpio sobre ese resultado
+    // (sin trazos, ajustes ni capas de antes), igual que si salieras y volvieras a entrar.
+    const entry = view.entries.find((item) => item.path === saved);
+    setFocus(saved);
+    setSelected([saved]);
+    setEditBase(mediaUrl(saved, entry?.modifiedMs ?? Date.now()));
+    setEditorDirty(false);
+    setEditorKey((value) => value + 1);
+    setToast(mode === "replace" ? "Imagen guardada. Sigues editando sobre el resultado." : "Copia guardada. Sigues editando sobre la copia.");
   }
 
   function pushTrail(path: string) {
@@ -1128,9 +1206,9 @@ export default function App() {
   }
 
   function copySelection(cut: boolean) {
-    const paths = targets().filter((path) => shown.find((entry) => entry.path === path)?.kind !== "dir");
+    const paths = targets();
     if (paths.length === 0) {
-      setToast("Elegí fotos o videos.");
+      setToast("No hay nada seleccionado.");
       return;
     }
     setClip({ paths, cut });
@@ -1476,6 +1554,9 @@ export default function App() {
                   <button className={iconSize === "medium" ? "on" : ""} title="Iconos medianos" aria-label="Iconos medianos" onClick={() => setIconSize("medium")}><GridGlyph /></button>
                   <button className={iconSize === "large" ? "on" : ""} title="Iconos grandes" aria-label="Iconos grandes" onClick={() => setIconSize("large")}><LargeGlyph /></button>
                 </div>
+                <div className="seg" role="group" aria-label="Carpetas">
+                  <button title="Nueva carpeta (Ctrl+Mayús+N)" aria-label="Nueva carpeta" disabled={busy || !current || current === COMPUTER} onClick={() => void newFolder()}><NewFolderGlyph /></button>
+                </div>
                 <div className="seg" role="group" aria-label="Portapapeles">
                   <button title="Copiar (Ctrl+C)" aria-label="Copiar" onClick={() => copySelection(false)}><CopyGlyph /></button>
                   <button title="Cortar (Ctrl+X)" aria-label="Cortar" onClick={() => copySelection(true)}><CutGlyph /></button>
@@ -1580,6 +1661,7 @@ export default function App() {
                   onCancelRename={cancelRename}
                   dirPath={current}
                   onMoveFiles={(paths, dest) => void moveInto(dest, paths)}
+                  onContextMenu={openMenu}
                   onOpen={(index) => {
                     const entry = shown[index];
                     setSelected([entry.path]);
@@ -1883,6 +1965,37 @@ export default function App() {
           </div>
         </div>
       )}
+      {menu && (
+        <div
+          className="ctx-menu"
+          style={{ left: Math.min(menu.x, window.innerWidth - 230), top: Math.min(menu.y, window.innerHeight - 340) }}
+          onPointerDown={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          {menu.entry && (
+            <button onClick={() => { const entry = menu.entry!; setMenu(null); openEntry(entry); }}><OpenGlyph /> Abrir</button>
+          )}
+          {menu.entry && <button onClick={() => { setMenu(null); void revealSelected(); }}><RevealGlyph /> Mostrar en el Explorador</button>}
+          {!menu.entry && <button onClick={() => { setMenu(null); void revealSelected(); }}><RevealGlyph /> Abrir esta carpeta en el Explorador</button>}
+          <hr />
+          {menu.entry && <button onClick={() => { setMenu(null); copySelection(false); }}><CopyGlyph /> Copiar <kbd>Ctrl+C</kbd></button>}
+          {menu.entry && <button onClick={() => { setMenu(null); copySelection(true); }}><CutGlyph /> Cortar <kbd>Ctrl+X</kbd></button>}
+          <button disabled={!clip} onClick={() => { setMenu(null); void doPaste(); }}><PasteGlyph /> Pegar aquí <kbd>Ctrl+V</kbd></button>
+          {menu.entry && <button onClick={() => { setMenu(null); void pickMoveDest(); }}><MoveGlyph /> Mover a…</button>}
+          <hr />
+          <button onClick={() => { setMenu(null); void newFolder(); }}><NewFolderGlyph /> Nueva carpeta <kbd>Ctrl+Mayús+N</kbd></button>
+          {menu.entry && targets().length === 1 && (
+            <button onClick={() => { const entry = menu.entry!; setMenu(null); startRename(entry); }}><RenameGlyph /> Cambiar nombre <kbd>F2</kbd></button>
+          )}
+          <button onClick={() => { setMenu(null); void copyPathText(); }}><PathGlyph /> Copiar ruta</button>
+          {menu.entry && (
+            <>
+              <hr />
+              <button className="danger-item" onClick={() => { setMenu(null); void remove(false, targets()); }}><TrashGlyph /> Eliminar <kbd>Supr</kbd></button>
+            </>
+          )}
+        </div>
+      )}
       {confirmPaths && (
         <div className="scrim">
           <div className="dialog" role="dialog" aria-modal="true">
@@ -1953,6 +2066,7 @@ export default function App() {
       )}
       {editing && focused?.kind === "image" && (
         <Editor
+          key={editorKey}
           src={editBase || mediaUrl(focused.path, focused.modifiedMs)}
           local
           folderSave
@@ -2046,6 +2160,7 @@ function Grid(props: {
   /** Carpeta que se está viendo (no es un destino válido al arrastrar). */
   dirPath: string | null;
   onMoveFiles: (paths: string[], dest: string) => void;
+  onContextMenu: (event: MouseEvent, entry: Entry | null) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const suppressClick = useRef(false);
@@ -2182,7 +2297,7 @@ function Grid(props: {
   }
 
   return (
-    <div className="grid-scroll" ref={scrollRef} onPointerDown={onBackgroundDown}>
+    <div className="grid-scroll" ref={scrollRef} onPointerDown={onBackgroundDown} onContextMenu={(event) => props.onContextMenu(event, null)}>
       {band && <div className="band" style={{ left: band.x, top: band.y, width: band.w, height: band.h }} />}
       <div className="grid-space" style={{ height: props.rows * props.rowH }}>
         {indexes.map((row) => (
@@ -2214,6 +2329,10 @@ function Grid(props: {
                     props.onClick(event, index);
                   }}
                   onDoubleClick={() => props.onOpen(index)}
+                  onContextMenu={(event) => {
+                    event.stopPropagation();
+                    props.onContextMenu(event, entry);
+                  }}
                 >
                   {entry.kind === "dir" ? (
                     <div className={`thumb folder${folderCount(entry) === 0 ? " no-items" : ""}`} title={folderSummary(entry)}>

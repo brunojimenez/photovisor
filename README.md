@@ -15,7 +15,9 @@ Hecho con Tauri 2 (Rust y WebView2), React 19, TypeScript y Vite. El diseño ori
 - **Carpetas con información:** cada carpeta dice qué tiene («3 carpetas · 12 fotos y videos · 2 otros archivos») y las vacías se ven atenuadas. Muestra **todos** los archivos, no solo las fotos: los demás se abren con el programa de Windows (los ejecutables y scripts se bloquean).
 - **Selección:** clic, Ctrl+clic, Mayús+clic para un rango, banda elástica, Ctrl+A y «seleccionar por tipo».
 - **Mover archivos y carpetas:** arrastra lo seleccionado hasta una carpeta del panel, del árbol o de la ruta (Esc cancela), o usa el botón **Mover a…** para elegir el destino. Si ya existe un archivo con ese nombre, el movido queda como «nombre (2)». Las valoraciones y etiquetas siguen a las fotos.
-- **Acciones:** copiar, cortar y pegar (Ctrl+C, X, V), renombrar con doble clic en el nombre, papelera con Supr (con aviso si la carpeta tiene contenido) y borrado directo con Mayús+Supr. Girar y voltear una o varias fotos a la vez (Ctrl + flechas).
+- **Carpetas nuevas:** botón **Nueva carpeta** o Ctrl+Mayús+N; queda con el nombre listo para escribir.
+- **Menú contextual (clic derecho):** abrir, mostrar en el Explorador de Windows, copiar, cortar, pegar, mover a…, nueva carpeta, cambiar nombre, copiar ruta y eliminar.
+- **Acciones:** copiar, cortar y pegar archivos y carpetas de cualquier tipo (Ctrl+C, X, V), renombrar con doble clic en el nombre, papelera con Supr (con aviso si la carpeta tiene contenido) y borrado directo con Mayús+Supr. Girar y voltear una o varias fotos a la vez (Ctrl + flechas).
 - **Valoración y etiquetas:** de 1 a 5 estrellas y cuatro colores de etiqueta, con filtro por valoración mínima y por etiqueta.
 - **Vista previa** de lo seleccionado (ajustada, 1:1 o a todo el ancho) y panel de herramientas lateral que se contrae.
 - **Recuerda** la distribución de los paneles, el tamaño y la posición de la ventana y la última carpeta.
@@ -100,6 +102,16 @@ Las imágenes de las capturas son dibujos propios (ver `docs/muestras/`).
 | ![Pincel](docs/capturas/editor-pincel.webp) | |
 | **Pincel:** difuminar, pixelar, colorear, clonar y reparar, con Foco | |
 
+## Instalación
+
+Descarga el instalador (`PhotoVisor_x.y.z_x64-setup.exe`) o el `.zip` portable desde [Releases](https://github.com/brunojimenez/photovisor/releases). El instalador es por usuario (no pide permisos de administrador), crea accesos directos y se desinstala desde «Aplicaciones instaladas». La versión portable es el mismo programa sin instalar: descomprime y ejecuta `photovisor.exe`.
+
+**Aviso de Windows (SmartScreen):** el programa aún **no está firmado digitalmente**, así que Windows puede mostrar «Windows protegió su PC». Es esperable en programas nuevos y sin firma: pulsa *Más información → Ejecutar de todos modos*. Para comprobar que el archivo es el publicado, compara su huella con la que aparece en las notas de cada Release:
+
+```powershell
+Get-FileHash .\PhotoVisor_x.y.z_x64-setup.exe -Algorithm SHA256
+```
+
 ## Desarrollo
 
 Requisitos: Node 22+ y, para compilar el programa, Rust (stable) con las herramientas de Tauri para Windows.
@@ -143,6 +155,10 @@ src-tauri/src/           Núcleo en Rust: archivos, miniaturas, catálogo, códe
 ## Datos y privacidad
 
 Las preferencias de la interfaz se guardan en el almacenamiento local del navegador embebido (distinto entre el programa instalado y el modo desarrollo). La configuración del programa vive en el perfil del usuario, fuera de las fotos.
+
+## Licencia
+
+[MIT](LICENSE).
 
 ## Licencias de terceros
 

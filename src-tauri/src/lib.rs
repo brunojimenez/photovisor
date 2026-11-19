@@ -406,14 +406,23 @@ async fn paste(
     let (report, moved) = tauri::async_runtime::spawn_blocking(move || files::paste_files(&dest, &sources, cut))
         .await
         .map_err(|error| error.to_string())?;
-    for (from, to) in &moved {
-        if cut {
-            catalog.rename(from, to);
-        } else {
-            catalog.copy(from, to);
+    for (from, to, is_dir) in &moved {
+        match (cut, *is_dir) {
+            (true, true) => catalog.rename_tree(from, to),
+            (true, false) => catalog.rename(from, to),
+            (false, false) => catalog.copy(from, to),
+            (false, true) => {}
         }
     }
     Ok(report)
+}
+
+/// Abre el Explorador de Windows con el archivo o carpeta seleccionado.
+#[tauri::command]
+fn reveal_in_explorer(state: tauri::State<AppState>, path: String) -> Result<(), String> {
+    let root = root_of(&state)?;
+    let path = files::ensure_inside(&root, Path::new(&path))?;
+    files::reveal_in_explorer(&path)
 }
 
 /// Mueve archivos o carpetas a otra carpeta (arrastrar y soltar, o «Mover a…»).
@@ -437,6 +446,14 @@ async fn move_to(
         }
     }
     Ok(report)
+}
+
+/// Crea una carpeta nueva dentro de `parent` y devuelve su ruta.
+#[tauri::command]
+fn create_folder(state: tauri::State<AppState>, parent: String) -> Result<String, String> {
+    let root = root_of(&state)?;
+    let dir = files::create_folder(&root, Path::new(&parent))?;
+    Ok(files::nice_path(&dir))
 }
 
 #[tauri::command]
@@ -742,6 +759,8 @@ pub fn run() {
             catalog_set,
             watch_folder,
             rename_file,
+            create_folder,
+            reveal_in_explorer,
             paste,
             move_to
         ])
